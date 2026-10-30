@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -320,4 +321,44 @@ func FuzzParseEnvelope(f *testing.F) {
 		var p testPayload
 		_ = e.Open(d, &p)
 	})
+}
+
+func TestIdentity(t *testing.T) {
+	d, _ := keys(t)
+	impostor, _ := keys(t)
+	cert := &x509.Certificate{RawSubjectPublicKeyInfo: []byte("the dashboard's TLS key")}
+	otherCert := &x509.Certificate{RawSubjectPublicKeyInfo: []byte("an attacker's TLS key")}
+
+	doc, err := NewIdentity(d, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, tlsKey, err := VerifyIdentity(doc, d.Public().Fingerprint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pub.Equal(d.Public()) || !bytes.Equal(tlsKey, TLSKeyHash(cert)) {
+		t.Error("identity or TLS key changed")
+	}
+
+	// An impostor serving its own identity fails the fingerprint check.
+	fake, _ := NewIdentity(impostor, otherCert)
+	if _, _, err := VerifyIdentity(fake, d.Public().Fingerprint()); err == nil {
+		t.Error("impostor identity accepted")
+	}
+
+	// The real identity with a substituted TLS key fails the signature.
+	var id Identity
+	json.Unmarshal(doc, &id)
+	id.TLSKey = TLSKeyHash(otherCert)
+	swapped, _ := json.Marshal(id)
+	if _, _, err := VerifyIdentity(swapped, d.Public().Fingerprint()); err == nil {
+		t.Error("substituted TLS key accepted")
+	}
+
+	// Behind a reverse proxy there is no TLS statement, and none is returned.
+	plain, _ := NewIdentity(d, nil)
+	if _, tlsKey, err := VerifyIdentity(plain, d.Public().Fingerprint()); err != nil || tlsKey != nil {
+		t.Errorf("tls key %x, err %v", tlsKey, err)
+	}
 }

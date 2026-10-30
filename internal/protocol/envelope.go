@@ -15,7 +15,6 @@ import (
 	"unicode"
 )
 
-// Kind says what an envelope carries.
 type Kind string
 
 const (
@@ -24,21 +23,15 @@ const (
 )
 
 const (
-	// MaxEnvelopeSize bounds every message an agent can send.
 	MaxEnvelopeSize = 32 << 20
-	// MaxReplySize bounds every reply the dashboard can send.
-	MaxReplySize = 8 << 10
-	// MaxReasonLength bounds the reason in a rejection.
+	MaxReplySize    = 8 << 10
 	MaxReasonLength = 500
 
-	// MaxAge is how old a message may be when it arrives. It covers
-	// retries; anything older is treated as a possible replay.
-	MaxAge = 15 * time.Minute
-	// MaxClockSkew is how far in the future a timestamp may be.
+	// MaxAge leaves room for retries; anything older may be a replay.
+	MaxAge       = 15 * time.Minute
 	MaxClockSkew = 5 * time.Minute
 )
 
-// Errors returned when checking an envelope.
 var (
 	ErrBadSignature = errors.New("signature does not verify")
 	ErrReplay       = errors.New("sequence number already used")
@@ -46,12 +39,9 @@ var (
 	ErrFromFuture   = errors.New("message timestamp is in the future")
 )
 
-// Envelope is every message an agent sends. The payload is encrypted to the
-// dashboard's identity; the whole envelope is signed by the agent.
-//
-// The dashboard can check who sent it, the signature, the sequence number and
-// the timestamp without touching the payload, and only decrypts and parses
-// the payload once all of those pass.
+// Envelope carries every agent message: the payload is encrypted to the
+// dashboard, and the whole envelope is signed by the agent, so it can be
+// checked before the payload is touched.
 type Envelope struct {
 	Version   int    `json:"version"`
 	Kind      Kind   `json:"kind"`
@@ -62,15 +52,13 @@ type Envelope struct {
 	Signature []byte `json:"signature"`
 }
 
-// EnrolRequest is the payload of an enrolment envelope.
 type EnrolRequest struct {
 	Secret       []byte `json:"secret"`
 	Hostname     string `json:"hostname"`
 	AgentVersion string `json:"agent_version"`
 }
 
-// header is bound to the payload as HPKE "info", so a payload cannot be
-// moved into another envelope, and is covered by the signature.
+// header is the HPKE "info", so a payload cannot move to another envelope.
 func (e *Envelope) header() []byte {
 	return join("bestbefore-envelope-v1",
 		[]byte(e.Kind), e.AgentKey, u64(e.Sequence), u64(uint64(e.Timestamp)))
@@ -80,8 +68,6 @@ func (e *Envelope) signedBytes() []byte {
 	return join("bestbefore-envelope-signature-v1", e.header(), e.Payload)
 }
 
-// Seal encrypts payload to the dashboard, signs the envelope and returns it
-// ready to send.
 func Seal(k *AgentKey, to *DashboardPublicKey, kind Kind, seq uint64, now time.Time, payload any) ([]byte, error) {
 	plaintext, err := json.Marshal(payload)
 	if err != nil {
@@ -108,10 +94,8 @@ func Seal(k *AgentKey, to *DashboardPublicKey, kind Kind, seq uint64, now time.T
 	return out, nil
 }
 
-// ParseEnvelope decodes an envelope and verifies its signature. It does not
-// decrypt or parse the payload, and it does not check freshness: the caller
-// must look up the agent, then call CheckTime and CheckSequence, and only
-// then Open.
+// ParseEnvelope verifies the signature only. Callers must then check the
+// agent, CheckTime and CheckSequence before calling Open.
 func ParseEnvelope(data []byte) (*Envelope, error) {
 	if len(data) > MaxEnvelopeSize {
 		return nil, errors.New("message too large")
@@ -138,7 +122,6 @@ func ParseEnvelope(data []byte) (*Envelope, error) {
 	return &e, nil
 }
 
-// CheckTime rejects envelopes that are too old or from the future.
 func (e *Envelope) CheckTime(now time.Time) error {
 	t := time.Unix(e.Timestamp, 0)
 	switch {
@@ -150,8 +133,6 @@ func (e *Envelope) CheckTime(now time.Time) error {
 	return nil
 }
 
-// CheckSequence rejects envelopes whose sequence number is not greater than
-// the last one accepted from this agent.
 func (e *Envelope) CheckSequence(last uint64) error {
 	if e.Sequence <= last {
 		return ErrReplay
@@ -159,8 +140,6 @@ func (e *Envelope) CheckSequence(last uint64) error {
 	return nil
 }
 
-// Open decrypts the payload and decodes it strictly into out: unknown fields
-// and trailing data are errors.
 func (e *Envelope) Open(k *DashboardKey, out any) error {
 	plaintext, err := hpke.Open(k.kem, kdf, aead, e.header(), e.Payload)
 	if err != nil {
@@ -169,7 +148,6 @@ func (e *Envelope) Open(k *DashboardKey, out any) error {
 	return decodeStrict(plaintext, out)
 }
 
-// Status is the dashboard's answer. The agent understands nothing else.
 type Status string
 
 const (
@@ -177,8 +155,8 @@ const (
 	Rejected Status = "rejected"
 )
 
-// Reply is the dashboard's answer to one request. It deliberately has no
-// room for instructions: the agent acts on Status alone and only logs Reason.
+// Reply has no room for instructions: the agent acts on Status and only
+// logs Reason.
 type Reply struct {
 	Status  Status `json:"status"`
 	Reason  string `json:"reason,omitempty"`
@@ -190,14 +168,11 @@ type signedReply struct {
 	Signature []byte `json:"signature"`
 }
 
-// RequestID identifies a request by its exact bytes, so that a reply can
-// only answer the request it was written for.
 func RequestID(request []byte) []byte {
 	h := sha256.Sum256(request)
 	return h[:]
 }
 
-// SignReply builds the dashboard's signed reply to a request.
 func SignReply(k *DashboardKey, request []byte, status Status, reason string) ([]byte, error) {
 	if len(reason) > MaxReasonLength {
 		reason = reason[:MaxReasonLength]
@@ -212,9 +187,8 @@ func SignReply(k *DashboardKey, request []byte, status Status, reason string) ([
 	})
 }
 
-// VerifyReply checks that a reply was signed by the dashboard and answers
-// this request, and returns it. Reason is stripped of control characters,
-// since it ends up in logs and terminals.
+// VerifyReply strips control characters from Reason, which ends up in
+// terminals.
 func VerifyReply(dashboard *DashboardPublicKey, request, data []byte) (*Reply, error) {
 	if len(data) > MaxReplySize {
 		return nil, errors.New("reply too large")
@@ -253,7 +227,6 @@ func sanitise(s string) string {
 	return s
 }
 
-// decodeStrict decodes JSON, rejecting unknown fields and trailing data.
 func decodeStrict(data []byte, out any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
