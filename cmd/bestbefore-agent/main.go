@@ -24,6 +24,7 @@ Usage:
   bestbefore-agent                      collect and send one report
   bestbefore-agent --dry-run            print the report instead of sending it
   bestbefore-agent enrol CODE           enrol this server with the code from the dashboard
+  bestbefore-agent configure docker X   change Docker access: tcp://host:port, off or auto
   bestbefore-agent config example       print a commented configuration file
   bestbefore-agent --version
 
@@ -33,7 +34,7 @@ Options:
   --docker-host addr   override the docker setting: unix:///path or tcp://host:port
 
 Enrolment options:
-  --docker setting     socket, off, unix:///path or tcp://host:port; asked if omitted
+  --docker setting     tcp://host:port (socket proxy), off or auto; asked if omitted
   --ca-file path       certificate authority of a reverse proxy using a private CA
   --force              enrol again, with a new key
 `
@@ -45,8 +46,11 @@ func main() {
 		return
 	}
 	command := ""
-	if len(args) > 0 && args[0] == "enrol" {
+	switch {
+	case len(args) > 0 && args[0] == "enrol":
 		command, args = "enrol", args[1:]
+	case len(args) > 1 && args[0] == "configure" && args[1] == "docker":
+		command, args = "configure docker", args[2:]
 	}
 
 	fs := flag.NewFlagSet("bestbefore-agent", flag.ExitOnError)
@@ -82,6 +86,10 @@ func main() {
 				ConfigPath: *configPath, StateDir: *stateDir, Out: os.Stdout,
 			})
 		}
+	case command == "configure docker" && len(positional) == 1:
+		if err = agent.SetDocker(*configPath, positional[0]); err == nil {
+			fmt.Printf("Docker access set to %s. It applies from the next report.\n", positional[0])
+		}
 	case command == "" && len(positional) == 0:
 		err = agent.Run(ctx, agent.Options{
 			DryRun: *dryRun, DockerHost: *dockerHost,
@@ -111,37 +119,45 @@ func parseInterspersed(fs *flag.FlagSet, args []string) []string {
 	}
 }
 
-// askDocker asks how to read Docker, on servers that have it.
+// askDocker asks how to read Docker, on servers that have it. The agent's
+// service is never given the Docker socket, so the choice is a socket proxy
+// or nothing.
 func askDocker() (string, error) {
 	if !docker.Present() {
-		return agent.DockerSocket, nil
+		return agent.DockerAuto, nil
 	}
 	if info, err := os.Stdin.Stat(); err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return "", errors.New("Docker is installed: pass --docker socket, off or tcp://host:port")
+		return "", errors.New("Docker is installed: pass --docker tcp://host:port (a socket proxy) or --docker off")
 	}
-	fmt.Print(`Docker is installed on this server. Reading it requires access to the Docker
-socket, which is equivalent to root, whatever the agent does with it.
+	fmt.Print(`Docker is installed on this server. The agent reads it through a socket proxy
+that only allows read endpoints: access to the Docker socket itself is
+equivalent to root, so the agent is never given it. See the README for a
+ready-made proxy configuration.
 
-  1) Read the Docker socket
-  2) Use a socket proxy that only allows read endpoints (recommended)
-  3) Don't scan Docker
+  1) Use a socket proxy
+  2) Don't scan Docker (change it later with: bestbefore-agent configure docker)
 
 Choice: `)
 	in := bufio.NewScanner(os.Stdin)
 	for in.Scan() {
 		switch strings.TrimSpace(in.Text()) {
 		case "1":
-			return agent.DockerSocket, nil
-		case "2":
-			fmt.Print("Proxy address (tcp://host:port): ")
-			if in.Scan() && strings.HasPrefix(strings.TrimSpace(in.Text()), "tcp://") {
-				return strings.TrimSpace(in.Text()), nil
+			fmt.Print("Proxy address [tcp://127.0.0.1:2375]: ")
+			if !in.Scan() {
+				return "", errors.New("no address entered")
 			}
-			return "", errors.New("the proxy address must start with tcp://")
-		case "3":
+			addr := strings.TrimSpace(in.Text())
+			if addr == "" {
+				addr = "tcp://127.0.0.1:2375"
+			}
+			if !strings.HasPrefix(addr, "tcp://") {
+				return "", errors.New("the proxy address must start with tcp://")
+			}
+			return addr, nil
+		case "2":
 			return agent.DockerOff, nil
 		}
-		fmt.Print("Choice (1, 2 or 3): ")
+		fmt.Print("Choice (1 or 2): ")
 	}
 	return "", errors.New("no choice made")
 }

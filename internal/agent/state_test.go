@@ -62,3 +62,24 @@ func TestAgentConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestSetDocker(t *testing.T) {
+	d, _ := protocol.GenerateDashboardKey()
+	path := filepath.Join(t.TempDir(), "agent.conf")
+	cfg := &Config{DashboardURL: "https://d.test", DashboardKey: d.Public(), DashboardTLSKey: make([]byte, 32), Docker: DockerAuto}
+	if err := cfg.write(path); err != nil {
+		t.Fatal(err)
+	}
+	for _, setting := range []string{"tcp://127.0.0.1:2375", DockerOff, DockerAuto} {
+		if err := SetDocker(path, setting); err != nil {
+			t.Fatal(err)
+		}
+		got, err := LoadConfig(path)
+		if err != nil || got.Docker != setting || !got.DashboardKey.Equal(d.Public()) || got.DashboardTLSKey == nil {
+			t.Errorf("after setting %s: %+v, %v", setting, got, err)
+		}
+	}
+	if err := SetDocker(path, "socket"); err == nil {
+		t.Error("invalid setting accepted")
+	}
+}

@@ -37,7 +37,7 @@ type Options struct {
 // Run collects one report and sends it.
 func Run(ctx context.Context, o Options) error {
 	if o.DryRun {
-		dockerSetting := DockerSocket
+		dockerSetting := DockerAuto
 		if cfg, err := LoadConfig(o.ConfigPath); err == nil {
 			dockerSetting = cfg.Docker
 		}
@@ -125,7 +125,7 @@ func collectDocker(ctx context.Context, setting string) (*report.Docker, error) 
 	switch setting {
 	case DockerOff:
 		return nil, nil
-	case DockerSocket, "":
+	case DockerAuto, "":
 		if !dockerPresent() {
 			return nil, nil
 		}
@@ -136,5 +136,8 @@ func collectDocker(ctx context.Context, setting string) (*report.Docker, error) 
 		return nil, err
 	}
 	d := docker.Collect(ctx, client)
+	if !d.Available && setting != host {
+		d.Error += "; Docker is installed but the agent cannot read its socket. Set up a socket proxy, then run: bestbefore-agent configure docker tcp://host:port (or: off)"
+	}
 	return &d, nil
 }

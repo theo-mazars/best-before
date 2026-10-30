@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,11 @@ func TestDockerSection(t *testing.T) {
 			}
 			if d.Available != tt.wantAvailable || d.Error == "" {
 				t.Errorf("available %v, error %q", d.Available, d.Error)
+			}
+			// Only the automatic setting points to a proxy: an explicit
+			// host was chosen by the owner.
+			if hint := strings.Contains(d.Error, "socket proxy"); hint != (tt.host == "") {
+				t.Errorf("proxy hint %v in %q", hint, d.Error)
 			}
 		})
 	}

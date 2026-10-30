@@ -24,8 +24,8 @@ var ExampleConfig string
 var configKeys = []string{"dashboard_url", "dashboard_key", "dashboard_tls_key", "ca_file", "docker"}
 
 const (
-	DockerSocket = "socket"
-	DockerOff    = "off"
+	DockerAuto = "auto"
+	DockerOff  = "off"
 )
 
 type Config struct {
@@ -45,7 +45,7 @@ func LoadConfig(path string) (*Config, error) {
 	c := &Config{
 		DashboardURL: v.Get("dashboard_url", ""),
 		CAFile:       v.Get("ca_file", ""),
-		Docker:       v.Get("docker", DockerSocket),
+		Docker:       v.Get("docker", DockerAuto),
 	}
 	if c.DashboardURL == "" || v.Get("dashboard_key", "") == "" {
 		return nil, fmt.Errorf("%s: not enrolled; run bestbefore-agent enrol with a code from the dashboard", path)
@@ -69,10 +69,10 @@ func LoadConfig(path string) (*Config, error) {
 
 func checkDockerSetting(s string) error {
 	switch {
-	case s == DockerSocket, s == DockerOff, strings.HasPrefix(s, "unix:///"), strings.HasPrefix(s, "tcp://"):
+	case s == DockerAuto, s == DockerOff, strings.HasPrefix(s, "unix:///"), strings.HasPrefix(s, "tcp://"):
 		return nil
 	}
-	return errors.New("docker must be socket, off, unix:///path or tcp://host:port")
+	return errors.New("docker must be tcp://host:port, off, auto or unix:///path")
 }
 
 // write saves the configuration, replacing any previous one atomically.
@@ -101,4 +101,17 @@ docker = %s
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// SetDocker changes the docker setting of an enrolled agent.
+func SetDocker(path, setting string) error {
+	if err := checkDockerSetting(setting); err != nil {
+		return err
+	}
+	c, err := LoadConfig(path)
+	if err != nil {
+		return err
+	}
+	c.Docker = setting
+	return c.write(path)
 }
