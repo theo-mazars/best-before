@@ -1,0 +1,4 @@
+# Only the built binaries and the image's files are needed.
+*
+!bin/linux-*/bestbefore
+!packaging/docker/

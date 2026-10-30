@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -buildid= -X github.com/theo-mazars/best-before/internal/version.Version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: all check build build-agent-linux dry-run check-pins update-pins test vet fmt-check clean
+.PHONY: all check build build-linux build-agent-linux image dry-run check-pins update-pins test vet fmt-check clean
 
 all: check build
 
@@ -21,6 +21,15 @@ build:
 LINUX_ARCH ?= $(shell go env GOARCH)
 build-agent-linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(LINUX_ARCH) go build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o bin/linux-$(LINUX_ARCH)/bestbefore-agent ./cmd/bestbefore-agent
+
+build-linux: build-agent-linux
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(LINUX_ARCH) go build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o bin/linux-$(LINUX_ARCH)/bestbefore ./cmd/bestbefore
+
+# The dashboard image, for the architecture Docker runs.
+DOCKER_ARCH = $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null)
+image:
+	$(MAKE) build-linux LINUX_ARCH=$(DOCKER_ARCH)
+	docker build -f packaging/docker/Dockerfile -t bestbefore:$(VERSION) .
 
 # Runs the agent's dry run here, or in a container if this machine has no APT.
 # See scripts/dry-run.sh for running it on a server over SSH.
