@@ -1,0 +1,46 @@
+[Unit]
+Description=Best Before agent: report this server's packages and containers
+Documentation=https://github.com/theo-mazars/best-before
+After=network-online.target
+Wants=network-online.target
+# Not enrolled yet: nothing to do.
+ConditionPathExists=/etc/bestbefore/agent.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bestbefore-agent
+TimeoutStartSec=15min
+User=bestbefore-agent
+Group=bestbefore-agent
+StateDirectory=bestbefore-agent
+StateDirectoryMode=0700
+UMask=0077
+
+# The agent only reads the system, talks to the dashboard over the network
+# and writes its sequence number.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Enforces, below the agent, that it never listens.
+SocketBindDeny=any
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources

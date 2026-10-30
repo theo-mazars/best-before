@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/theo-mazars/best-before/internal/protocol"
 )
@@ -94,5 +95,26 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
+	if err := matchDirOwner(tmp); err != nil {
+		return err
+	}
 	return os.Rename(tmp, path)
+}
+
+// matchDirOwner gives a file the owner of its directory. Enrolment runs as
+// root, but the agent's service runs as its own user, which owns the state
+// directory once the service has started.
+func matchDirOwner(path string) error {
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	return os.Lchown(path, int(st.Uid), int(st.Gid))
 }
