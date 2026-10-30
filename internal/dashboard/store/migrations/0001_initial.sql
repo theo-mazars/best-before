@@ -3,13 +3,26 @@
 -- privileged defaults.
 
 CREATE TABLE users (
-	id            TEXT    NOT NULL PRIMARY KEY CHECK (length(id) = 26),
-	email         TEXT    NOT NULL UNIQUE COLLATE NOCASE CHECK (length(email) BETWEEN 3 AND 254 AND instr(email, '@') > 1),
-	password_hash TEXT    NOT NULL,
-	totp_secret   BLOB    CHECK (totp_secret IS NULL OR length(totp_secret) = 20),
-	role          TEXT    NOT NULL CHECK (role IN ('admin', 'user')),
-	created_at    INTEGER NOT NULL
+	id             TEXT    NOT NULL PRIMARY KEY CHECK (length(id) = 26),
+	email          TEXT    NOT NULL UNIQUE COLLATE NOCASE CHECK (length(email) BETWEEN 3 AND 254 AND instr(email, '@') > 1),
+	password_hash  TEXT    NOT NULL,
+	totp_secret    BLOB    CHECK (totp_secret IS NULL OR length(totp_secret) = 20),
+	totp_last_step INTEGER NOT NULL DEFAULT 0,
+	role           TEXT    NOT NULL CHECK (role IN ('admin', 'user')),
+	created_at     INTEGER NOT NULL
 ) STRICT;
+
+-- Only the hash of a session token is stored.
+CREATE TABLE sessions (
+	token_hash   BLOB    NOT NULL PRIMARY KEY CHECK (length(token_hash) = 32),
+	user_id      TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	created_at   INTEGER NOT NULL,
+	last_seen_at INTEGER NOT NULL,
+	expires_at   INTEGER NOT NULL CHECK (expires_at > created_at)
+) STRICT;
+
+CREATE INDEX sessions_user_id ON sessions (user_id);
+CREATE INDEX sessions_expires_at ON sessions (expires_at);
 
 CREATE TABLE agents (
 	id               TEXT    NOT NULL PRIMARY KEY CHECK (length(id) = 26),
@@ -19,7 +32,7 @@ CREATE TABLE agents (
 	enrolled_at      INTEGER NOT NULL,
 	enrolled_from_ip TEXT    NOT NULL,
 	revoked_at       INTEGER,
-	revoked_by       TEXT    REFERENCES users (id),
+	revoked_by       TEXT    REFERENCES users (id) ON DELETE SET NULL,
 	last_sequence    INTEGER NOT NULL DEFAULT 0 CHECK (last_sequence >= 0),
 	last_request_id  BLOB    CHECK (last_request_id IS NULL OR length(last_request_id) = 32),
 	last_report_at   INTEGER,
@@ -29,7 +42,7 @@ CREATE TABLE agents (
 CREATE TABLE enrolment_codes (
 	id          TEXT    NOT NULL PRIMARY KEY CHECK (length(id) = 26),
 	secret_hash BLOB    NOT NULL UNIQUE CHECK (length(secret_hash) = 32),
-	created_by  TEXT    REFERENCES users (id),
+	created_by  TEXT    REFERENCES users (id) ON DELETE SET NULL,
 	created_at  INTEGER NOT NULL,
 	expires_at  INTEGER NOT NULL CHECK (expires_at > created_at),
 	used_at     INTEGER,
