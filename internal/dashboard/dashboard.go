@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,6 +27,14 @@ import (
 )
 
 const DefaultConfigPath = "/etc/bestbefore/dashboard.conf"
+
+// ExampleConfig documents every setting; the .deb installs it as the default
+// configuration.
+//
+//go:embed dashboard.conf
+var ExampleConfig string
+
+var configKeys = []string{"listen", "public_url", "data_dir", "tls", "tls_cert", "tls_key", "stale_after"}
 
 const (
 	TLSBuiltin = "builtin" // self-signed, generated in the data directory
@@ -44,8 +53,7 @@ type Config struct {
 }
 
 func LoadConfig(path string) (Config, error) {
-	v, err := config.Load(path,
-		"listen", "public_url", "data_dir", "tls", "tls_cert", "tls_key", "stale_after")
+	v, err := config.Load(path, configKeys...)
 	if err != nil {
 		return Config{}, err
 	}

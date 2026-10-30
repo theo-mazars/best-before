@@ -18,6 +18,7 @@ const usage = `bestbefore: Best Before dashboard. Receives agent reports, matche
 
 Usage:
   bestbefore [--config path]                        run the dashboard
+  bestbefore config example                         print a commented configuration file
   bestbefore --version
 
 Users (each command also takes --config path):
@@ -35,6 +36,10 @@ or deleted.
 func main() {
 	if len(os.Args) > 2 && os.Args[1] == "user" {
 		os.Exit(user(os.Args[2], os.Args[3:]))
+	}
+	if len(os.Args) == 3 && os.Args[1] == "config" && os.Args[2] == "example" {
+		fmt.Print(dashboard.ExampleConfig)
+		return
 	}
 
 	fs := flag.NewFlagSet("bestbefore", flag.ExitOnError)
