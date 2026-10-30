@@ -32,7 +32,7 @@ func TestConfigValidation(t *testing.T) {
 	for name, content := range map[string]string{
 		"tls off on a public address": "listen = 0.0.0.0:8443\ntls = off\n",
 		"files without paths":         "tls = files\n",
-		"plain http public url":       "public_url = http://dashboard.vpn\n",
+		"public url without scheme":   "public_url = dashboard.vpn\n",
 		"bad duration":                "stale_after = two days\n",
 		"typo":                        "lisen = 127.0.0.1:8443\n",
 	} {

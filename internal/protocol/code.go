@@ -76,7 +76,7 @@ func checkDashboardURL(s string) error {
 		return errors.New("dashboard URL is too long")
 	}
 	u, err := url.Parse(s)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("dashboard URL must be of the form https://host[:port][/path]")
 	}
 	return nil

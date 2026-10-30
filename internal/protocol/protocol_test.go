@@ -237,7 +237,10 @@ func TestEnrolmentCode(t *testing.T) {
 			t.Errorf("accepted %q", bad)
 		}
 	}
-	for _, u := range []string{"http://dashboard.vpn", "https://user:pw@dashboard.vpn", "https://", "ftp://x"} {
+	if _, err := NewEnrolmentCode("http://localhost:8080", d.Public()); err != nil {
+		t.Errorf("plain HTTP, for local testing: %v", err)
+	}
+	for _, u := range []string{"https://user:pw@dashboard.vpn", "https://", "ftp://x", "dashboard.vpn"} {
 		if _, err := NewEnrolmentCode(u, d.Public()); err == nil {
 			t.Errorf("accepted URL %q", u)
 		}

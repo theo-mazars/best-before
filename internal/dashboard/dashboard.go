@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/theo-mazars/best-before/internal/config"
@@ -80,8 +81,8 @@ func (c Config) validate() error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	if c.PublicURL != "" {
-		if u, err := url.Parse(c.PublicURL); err != nil || u.Scheme != "https" || u.Host == "" {
-			return errors.New("public_url must be an https:// URL")
+		if u, err := url.Parse(c.PublicURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return errors.New("public_url must be an https:// URL (or http:// for local testing)")
 		}
 	}
 	switch c.TLS {
@@ -152,6 +153,10 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    64 << 10,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}
+
+	if strings.HasPrefix(c.PublicURL, "http://") {
+		log.Warn("public_url uses plain HTTP: reports stay encrypted and signed, but which servers report and when is visible on the network. Use it for local testing only.")
 	}
 
 	errc := make(chan error, 1)
