@@ -43,3 +43,17 @@ func TestConfigValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupURL(t *testing.T) {
+	for want, c := range map[string]Config{
+		"https://dashboard.vpn:8443/setup": {PublicURL: "https://dashboard.vpn:8443/", Listen: "0.0.0.0:8443"},
+		"https://<this host>:8443/setup":   {Listen: "0.0.0.0:8443"},
+		"https://127.0.0.1:8443/setup":     {Listen: "127.0.0.1:8443"},
+		"http://127.0.0.1:8080/setup":      {Listen: "127.0.0.1:8080", TLS: TLSOff},
+		"https://[::1]:8443/setup":         {Listen: "[::1]:8443"},
+	} {
+		if got := setupURL(c); got != want {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	}
+}

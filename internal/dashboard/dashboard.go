@@ -138,6 +138,11 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		return err
 	}
 	go ui.cleanSessions(ctx)
+	if code, err := ui.setup.start(ctx, st); err != nil {
+		return err
+	} else if code != "" {
+		log.Warn("no admin yet: open "+setupURL(c)+" and enter this setup code", "setup_code", code)
+	}
 
 	mux := http.NewServeMux()
 	in.routes(mux)
@@ -178,6 +183,23 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
+}
+
+// setupURL says where to find the setup page. Without public_url, an
+// unspecified listen address such as 0.0.0.0 is not something to open.
+func setupURL(c Config) string {
+	if c.PublicURL != "" {
+		return strings.TrimSuffix(c.PublicURL, "/") + "/setup"
+	}
+	scheme := "https"
+	if c.TLS == TLSOff {
+		scheme = "http"
+	}
+	host, port, _ := net.SplitHostPort(c.Listen)
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "<this host>"
+	}
+	return scheme + "://" + net.JoinHostPort(host, port) + "/setup"
 }
 
 // tlsConfig also returns the builtin certificate, which the identity

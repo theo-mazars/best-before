@@ -51,6 +51,8 @@ small { color: var(--muted); }
 .error { padding: 0.75rem; border-left: 4px solid var(--danger); background: #fde7e5; }
 .note { color: var(--muted); }
 .empty { color: var(--muted); padding: 2rem 0; }
+.qr { width: 12rem; height: 12rem; display: block; }
+.key { letter-spacing: 0.05em; }
 pre.code {
 	padding: 1rem; background: var(--fg); color: #fff; border-radius: 4px;
 	white-space: pre-wrap; word-break: break-all; user-select: all;

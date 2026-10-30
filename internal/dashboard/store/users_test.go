@@ -170,3 +170,25 @@ func TestDeletedUserKeepsHistory(t *testing.T) {
 		t.Error("agent's revocation lost with the user")
 	}
 }
+
+func TestCreateFirstAdmin(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	now := time.Now()
+	if n, _ := s.CountUsers(ctx); n != 0 {
+		t.Fatalf("%d users in a new database", n)
+	}
+	if err := s.CreateFirstAdmin(ctx, "first@example.org", "x", bytes.Repeat([]byte{1}, 20), 42, now); err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.UserByEmail(ctx, "first@example.org")
+	if err != nil || u.Role != RoleAdmin {
+		t.Fatalf("first admin: %+v, %v", u, err)
+	}
+	if err := s.UseTOTPStep(ctx, u.ID, 42); !errors.Is(err, ErrTOTPReplayed) {
+		t.Errorf("the setup's TOTP step is reusable: %v", err)
+	}
+	if err := s.CreateFirstAdmin(ctx, "second@example.org", "x", bytes.Repeat([]byte{1}, 20), 1, now); !errors.Is(err, ErrSetupDone) {
+		t.Errorf("second setup: %v", err)
+	}
+}

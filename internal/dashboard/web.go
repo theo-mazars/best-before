@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -39,6 +40,7 @@ type web struct {
 	loginIP    *rateLimiter
 	loginEmail *rateLimiter
 	pages      map[string]*template.Template
+	setup      setup
 }
 
 func newWeb(st *store.Store, key *protocol.DashboardKey, cfg Config, log *slog.Logger, now func() time.Time) (*web, error) {
@@ -53,7 +55,7 @@ func newWeb(st *store.Store, key *protocol.DashboardKey, cfg Config, log *slog.L
 		pages:      map[string]*template.Template{},
 	}
 	funcs := template.FuncMap{"date": formatDate}
-	for _, page := range []string{"login", "agents", "code", "error"} {
+	for _, page := range []string{"login", "setup", "agents", "code", "error"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -69,6 +71,8 @@ func (w *web) routes(mux *http.ServeMux) {
 	page := func(h http.Handler) http.Handler { return w.headers(csrf.Handler(h)) }
 
 	mux.Handle("GET /static/", w.headers(http.StripPrefix("/static/", http.FileServerFS(static))))
+	mux.Handle("GET /setup", page(http.HandlerFunc(w.setupPage)))
+	mux.Handle("POST /setup", page(http.HandlerFunc(w.completeSetup)))
 	mux.Handle("GET /login", page(http.HandlerFunc(w.loginPage)))
 	mux.Handle("POST /login", page(http.HandlerFunc(w.login)))
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
@@ -122,6 +126,10 @@ func (w *web) admin(h func(http.ResponseWriter, *http.Request, *store.User)) htt
 }
 
 func (w *web) loginPage(rw http.ResponseWriter, r *http.Request) {
+	if w.setup.active() {
+		http.Redirect(rw, r, "/setup", http.StatusSeeOther)
+		return
+	}
 	w.render(rw, http.StatusOK, "login", nil)
 }
 
@@ -294,12 +302,18 @@ func (w *web) revoke(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	http.Redirect(rw, r, "/agents", http.StatusSeeOther)
 }
 
+// render builds the whole page before sending it, so that a template error
+// never sends half a page.
 func (w *web) render(rw http.ResponseWriter, status int, page string, data any) {
+	var buf bytes.Buffer
+	if err := w.pages[page].Execute(&buf, data); err != nil {
+		w.log.Error("rendering page", "page", page, "error", err)
+		http.Error(rw, "Something went wrong on the dashboard. The details are in its log.", http.StatusInternalServerError)
+		return
+	}
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rw.WriteHeader(status)
-	if err := w.pages[page].Execute(rw, data); err != nil {
-		w.log.Error("rendering page", "page", page, "error", err)
-	}
+	rw.Write(buf.Bytes())
 }
 
 func (w *web) fail(rw http.ResponseWriter, r *http.Request, err error) {

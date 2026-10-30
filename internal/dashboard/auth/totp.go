@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -32,6 +33,14 @@ func NewTOTPSecret() ([]byte, error) {
 // EncodeTOTPSecret formats a secret for typing into an authenticator app.
 func EncodeTOTPSecret(secret []byte) string {
 	return secretEncoding.EncodeToString(secret)
+}
+
+func DecodeTOTPSecret(s string) ([]byte, error) {
+	secret, err := secretEncoding.DecodeString(s)
+	if err != nil || len(secret) != TOTPSecretLen {
+		return nil, errors.New("malformed TOTP secret")
+	}
+	return secret, nil
 }
 
 func TOTPURI(issuer, account string, secret []byte) string {

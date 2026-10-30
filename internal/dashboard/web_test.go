@@ -30,6 +30,14 @@ type testWeb struct {
 
 func newTestWeb(t *testing.T, publicURL string) *testWeb {
 	t.Helper()
+	tw := newEmptyTestWeb(t, publicURL)
+	tw.addUser("admin@example.org", store.RoleAdmin)
+	return tw
+}
+
+// newEmptyTestWeb is a dashboard without users, as at first start.
+func newEmptyTestWeb(t *testing.T, publicURL string) *testWeb {
+	t.Helper()
 	ctx := context.Background()
 	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -48,7 +56,6 @@ func newTestWeb(t *testing.T, publicURL string) *testWeb {
 	tw.w.routes(tw.mux)
 
 	tw.secret, _ = auth.NewTOTPSecret()
-	tw.addUser("admin@example.org", store.RoleAdmin)
 	return tw
 }
 

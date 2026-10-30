@@ -17,6 +17,7 @@ var (
 	ErrEmailTaken   = errors.New("a user with this email already exists")
 	ErrTOTPReplayed = errors.New("this code has already been used")
 	ErrLastAdmin    = errors.New("this is the last admin; add another admin first")
+	ErrSetupDone    = errors.New("the dashboard already has users")
 )
 
 type User struct {
@@ -40,6 +41,7 @@ const (
 	selectUserByEmail = selectUsers + ` WHERE email = ?`
 	selectUserByID    = selectUsers + ` WHERE id = ?`
 	selectAllUsers    = selectUsers + ` ORDER BY email`
+	countUsers        = `SELECT count(*) FROM users`
 	countOtherAdmins  = `SELECT count(*) FROM users WHERE role = 'admin' AND id != ?`
 	updateUserRole    = `UPDATE users SET role = ? WHERE id = ?`
 	updatePassword    = `UPDATE users SET password_hash = ? WHERE id = ?`
@@ -69,6 +71,33 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash, role string
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (s *Store) CountUsers(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, countUsers).Scan(&n)
+	return n, err
+}
+
+// CreateFirstAdmin creates the first user, as an admin with a confirmed TOTP
+// step. The check that no user exists is in the same transaction, so two
+// concurrent setups cannot both succeed.
+func (s *Store) CreateFirstAdmin(ctx context.Context, email, passwordHash string, totpSecret []byte, step uint64, now time.Time) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		var n int
+		if err := tx.QueryRowContext(ctx, countUsers).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrSetupDone
+		}
+		id := newID()
+		if _, err := tx.ExecContext(ctx, insertUser, id, email, passwordHash, totpSecret, RoleAdmin, unix(now)); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, useTOTPStep, step, id, step)
+		return err
+	})
 }
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +31,7 @@ func (u *UserCLI) Add(ctx context.Context, email, role string) error {
 	if err := checkRole(role); err != nil {
 		return err
 	}
-	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email || addr.Name != "" {
+	if !validEmail(email) {
 		return fmt.Errorf("%q is not a valid email address", email)
 	}
 	if err := u.needTerminal(); err != nil {
