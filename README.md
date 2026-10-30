@@ -27,6 +27,38 @@ You get a weekly digest, and an immediate alert when something urgent appears.
 
 **Run the dashboard on a VPN or private network only. Never expose it to the internet.** It holds a complete map of every vulnerable package on every server.
 
+## The agent
+
+### See exactly what leaves your server
+
+```sh
+bestbefore-agent --dry-run
+```
+
+prints the full report as JSON and sends nothing. It contains:
+
+- **Host:** OS, kernel, hostname, uptime, whether a reboot is required, every installed package (with its source package), and the packages that can be upgraded, with security updates flagged.
+- **Docker:** running containers (name, image as written, image ID, Compose project and service) and, for each image, its registry digests.
+
+Anything the agent could not collect is listed in the report (`host.errors`, `docker.available` / `docker.error`), so a gap is never mistaken for a clean server.
+
+Servers without Docker are perfectly normal: the report simply has no `docker` section, and nothing about Docker appears anywhere. If Docker *is* installed but the agent cannot read it (daemon stopped, missing permission), that is reported as a problem, because containers may be running unseen.
+
+The agent does not run `apt-get update`. It reads the package lists your system already keeps current (Ubuntu's `apt-daily` timer does this by default) and records how recent they are in `host.apt.lists_published_at`.
+
+### Docker access
+
+> [!IMPORTANT]
+> **Access to the Docker socket is equivalent to root on the host**, whatever the agent does with it.
+
+The agent only ever sends `GET` requests to the Docker API, and tests fail the build if that changes. It never pulls images or touches containers. That limits what *our code* does, not what a process holding the socket *could* do, so we recommend putting the agent behind a socket proxy that only allows the read endpoints it needs, and pointing it there:
+
+```sh
+bestbefore-agent --docker-host tcp://127.0.0.1:2375 --dry-run
+```
+
+`--docker-host` defaults to `$DOCKER_HOST`, then to `unix:///var/run/docker.sock` if Docker is installed.
+
 ## Repository layout
 
 | Path | Contents |
@@ -34,6 +66,9 @@ You get a weekly digest, and an immediate alert when something urgent appears.
 | `cmd/bestbefore-agent/` | Entry point of the agent binary |
 | `cmd/bestbefore/` | Entry point of the dashboard binary |
 | `internal/agent/` | Agent logic: collection, signing, push |
+| `internal/agent/host/` | Host and APT collection |
+| `internal/agent/docker/` | Read-only Docker API client |
+| `internal/report/` | Report schema shared by agent and dashboard |
 | `internal/dashboard/` | Dashboard logic: ingestion, matching, web UI, alerts |
 | `internal/version/` | Build metadata shared by both |
 
