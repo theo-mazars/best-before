@@ -83,6 +83,20 @@ make check   # formatting, vet and tests: run this before pushing
 
 CI on GitHub Actions runs only when triggered by hand, so `make check` is the main safeguard.
 
+Building and testing need only Go, on Linux or macOS.
+
+### Trying the agent
+
+The agent collects from APT, so it needs Ubuntu or Debian to run for real. `scripts/dry-run.sh` builds it for Linux and runs `--dry-run` wherever you have APT:
+
+```sh
+make dry-run                             # here on Ubuntu/Debian, otherwise in a container
+scripts/dry-run.sh --container           # in an Ubuntu container (Docker or Podman)
+scripts/dry-run.sh --ssh user@server     # on a server: copied over, run, then deleted
+```
+
+Container mode mounts your container engine's socket, which is root-equivalent: use it on a development machine only.
+
 ### Pinned images
 
 Container images used in this repository are pinned by tag and digest (`ubuntu:24.04@sha256:…`), so a build never silently changes underneath us. Tags such as `ubuntu:24.04` are rebuilt regularly, so the pins need refreshing:
