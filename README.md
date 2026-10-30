@@ -83,6 +83,17 @@ make check   # formatting, vet and tests: run this before pushing
 
 CI on GitHub Actions runs only when triggered by hand, so `make check` is the main safeguard.
 
+### Pinned images
+
+Container images used in this repository are pinned by tag and digest (`ubuntu:24.04@sha256:…`), so a build never silently changes underneath us. Tags such as `ubuntu:24.04` are rebuilt regularly, so the pins need refreshing:
+
+```sh
+make check-pins    # lists pins whose tag has a newer build (needs only curl)
+make update-pins   # rewrites them
+```
+
+Run `make check-pins` when you start working on a change, and commit any update on its own.
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
