@@ -124,8 +124,15 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		perIP:    newRateLimiter(30, 2*time.Second, time.Now),
 		perAgent: newRateLimiter(10, time.Minute, time.Now),
 	}
+	ui, err := newWeb(st, key, c, log, time.Now)
+	if err != nil {
+		return err
+	}
+	go ui.cleanSessions(ctx)
+
 	mux := http.NewServeMux()
 	in.routes(mux)
+	ui.routes(mux)
 
 	srv := &http.Server{
 		Addr:              c.Listen,

@@ -1,0 +1,10 @@
+{{define "title"}}Add a server · Best Before{{end}}
+{{define "content"}}
+<section class="narrow">
+	<h1>Add a server</h1>
+	<p>Run this on the server, as root. The code works once and expires at {{date .ExpiresAt}}.</p>
+	<pre class="code">sudo bestbefore-agent enrol {{.Code}}</pre>
+	<p class="note">Treat the code as a password until it is used: anyone holding it can enrol a server. It is shown only once.</p>
+	<p><a href="/agents">Back to agents</a></p>
+</section>
+{{end}}
