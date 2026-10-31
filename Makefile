@@ -25,11 +25,10 @@ build-agent-linux:
 build-linux: build-agent-linux
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(LINUX_ARCH) go build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o bin/linux-$(LINUX_ARCH)/bestbefore ./cmd/bestbefore
 
-# The dashboard image, for the architecture Docker runs.
-DOCKER_ARCH = $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null)
+# The dashboard image, built from source inside Docker.
 image:
-	$(MAKE) build-linux LINUX_ARCH=$(DOCKER_ARCH)
-	docker build -f packaging/docker/Dockerfile -t bestbefore:$(VERSION) .
+	docker build -f packaging/docker/Dockerfile --build-arg VERSION=$(VERSION) -t bestbefore:$(VERSION) .
+	@echo "Built bestbefore:$(VERSION)"
 
 # Runs the agent's dry run here, or in a container if this machine has no APT.
 # See scripts/dry-run.sh for running it on a server over SSH.

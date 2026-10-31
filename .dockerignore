@@ -1,4 +1,8 @@
-# Only the built binaries and the image's files are needed.
+# The image is built from source: only the Go module and the image's files.
 *
-!bin/linux-*/bestbefore
+!go.mod
+!go.sum
+!cmd/
+!internal/
 !packaging/docker/
+**/*_test.go
