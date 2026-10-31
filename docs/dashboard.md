@@ -165,7 +165,14 @@ Linux, SUSE Linux Enterprise…), which knows about backported fixes. When the
 database has no data for an image's distribution (openSUSE Leap, for
 example), the image is shown as **not checked**, never as clean. Software
 found through `*_VERSION` variables (Node, Python, Redis…) is checked by version
-against the NVD, which is noisier.
+against the NVD, which is noisier. Go programs are checked against Go's own
+vulnerability data for the Go version that built them, and shown as, for
+example, **go (traefik)**: the fix is a newer image, rebuilt by its
+maintainers with a fixed Go. This cannot tell whether the program uses the
+vulnerable part of Go, so some findings will not affect it. `gosu`, in the
+official `postgres`, `mysql` and other images, is not checked: it only drops
+privileges for a moment at container start and takes no input, so its
+findings are noise.
 
 Only vulnerabilities **with a fix available** count towards a server's status.
 Those without one are listed on the server's page under **No fix yet**, and

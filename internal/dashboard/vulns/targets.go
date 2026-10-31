@@ -2,6 +2,9 @@ package vulns
 
 import (
 	"fmt"
+	"maps"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,8 +22,18 @@ type target struct {
 	context  pkg.Context
 	packages []pkg.Package
 	kinds    map[pkg.ID]string
-	// unchecked says why the target's packages cannot be checked.
+	// names replace a package's name in findings, e.g. "go (traefik)" for
+	// the Go standard library in the traefik program.
+	names map[pkg.ID]string
+	// unchecked says why some of the target's packages cannot be checked.
 	unchecked string
+}
+
+func (t *target) uncheckable(why string) {
+	if t.unchecked != "" {
+		t.unchecked += "; "
+	}
+	t.unchecked += why
 }
 
 func (t *target) hasKind(kind string) bool {
@@ -60,13 +73,18 @@ func targets(r *report.Report) []target {
 			t = newTarget(img.ID, report.OS{})
 		}
 		t.addSoftware(img.Versions)
+		var programs []report.GoProgram
+		if img.System != nil {
+			programs = img.System.GoPrograms
+		}
+		t.addGo(programs, img.Versions)
 		out = append(out, t)
 	}
 	return out
 }
 
 func newTarget(id string, os report.OS) target {
-	t := target{id: id, kinds: map[pkg.ID]string{}}
+	t := target{id: id, kinds: map[pkg.ID]string{}, names: map[pkg.ID]string{}}
 	if os.ID != "" {
 		t.context.Distro = distro.NewFromNameVersion(os.ID, os.VersionID)
 	}
@@ -94,7 +112,7 @@ func (t *target) addPackages(manager string, pkgs []report.InstalledPackage) {
 	// Without a distribution, distribution data cannot be used.
 	if t.context.Distro == nil {
 		if len(pkgs) > 0 {
-			t.unchecked = "packages found, but no os-release to tell which distribution's security data applies"
+			t.uncheckable("packages found, but no os-release to tell which distribution's security data applies")
 		}
 		return
 	}
@@ -114,7 +132,7 @@ func (t *target) addPackages(manager string, pkgs []report.InstalledPackage) {
 func (t *target) addSoftware(vars []report.VersionVariable) {
 	for _, v := range vars {
 		sw, ok := softwareByVariable[v.Name]
-		if !ok {
+		if !ok || len(sw.cpes) == 0 {
 			continue
 		}
 		ver, ok := softwareVersion(v.Value)
@@ -148,4 +166,61 @@ func rpmMetadata(p report.InstalledPackage) pkg.RpmMetadata {
 		m.ModularityLabel = &p.Module
 	}
 	return m
+}
+
+// addGo adds Go's standard library once per Go version found in the image,
+// named after the programs built with it, and matched against Go's own
+// vulnerability data. GOLANG_VERSION (golang images and those built FROM
+// them) counts as a program named go.
+func (t *target) addGo(programs []report.GoProgram, vars []report.VersionVariable) {
+	byVersion := map[string][]string{}
+	old := 0
+	for _, p := range programs {
+		if IgnoredGoProgram(p.Path) {
+			continue
+		}
+		if p.GoVersion == "" {
+			old++
+			continue
+		}
+		// "go1.24.2 X:boringcrypto" is Go 1.24.2.
+		v, _, _ := strings.Cut(p.GoVersion, " ")
+		byVersion[v] = append(byVersion[v], path.Base(p.Path))
+	}
+	for _, vv := range vars {
+		if vv.Name != "GOLANG_VERSION" {
+			continue
+		}
+		if v, ok := softwareVersion(vv.Value); ok && !slices.Contains(byVersion["go"+v], "go") {
+			byVersion["go"+v] = append(byVersion["go"+v], "go")
+		}
+	}
+	for _, v := range slices.Sorted(maps.Keys(byVersion)) {
+		names := slices.Compact(slices.Sorted(slices.Values(byVersion[v])))
+		// The go command first, as golang images have dozens of tools.
+		if i := slices.Index(names, "go"); i > 0 {
+			names = append([]string{"go"}, slices.Delete(names, i, i+1)...)
+		}
+		label := strings.Join(names[:min(3, len(names))], ", ")
+		if len(names) > 3 {
+			label += ", …"
+		}
+		t.add(pkg.Package{Name: "stdlib", Version: v, Type: syftPkg.GoModulePkg, Language: syftPkg.Go}, KindSoftware)
+		t.names[t.packages[len(t.packages)-1].ID] = "go (" + label + ")"
+	}
+	if old > 0 {
+		t.uncheckable(fmt.Sprintf("%d Go program(s) built before Go 1.18, whose Go version the agent cannot read; such old versions are unsupported", old))
+	}
+}
+
+// ignoredGoPrograms are Go programs whose findings are noise rather than
+// risk, by the owner's decision. gosu, in the official postgres, mysql and
+// other images, only drops privileges for a moment at container start and
+// takes no input, so it cannot reach the vulnerable parts of Go its version
+// matches; its maintainers make the same case.
+var ignoredGoPrograms = map[string]bool{"gosu": true}
+
+// IgnoredGoProgram reports whether a Go program is left out of matching.
+func IgnoredGoProgram(programPath string) bool {
+	return ignoredGoPrograms[path.Base(programPath)]
 }

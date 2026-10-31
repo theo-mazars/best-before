@@ -8,10 +8,12 @@
 package vulns
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -28,6 +30,7 @@ import (
 	"github.com/anchore/grype/grype/matcher"
 	"github.com/anchore/grype/grype/matcher/stock"
 	"github.com/anchore/grype/grype/vulnerability"
+	syftPkg "github.com/anchore/syft/syft/pkg"
 
 	"github.com/theo-mazars/best-before/internal/report"
 	"github.com/theo-mazars/best-before/internal/version"
@@ -234,13 +237,13 @@ func (db *DB) Match(ctx context.Context, r *report.Report) (*Result, error) {
 
 	res := &Result{Findings: []Finding{}, Unchecked: map[string]string{}}
 	for _, t := range targets(r) {
-		if t.unchecked == "" && t.context.Distro != nil && t.hasKind(KindPackage) {
+		if t.context.Distro != nil && t.hasKind(KindPackage) {
 			ok, err := db.covers(t.context.Distro)
 			if err != nil {
 				return nil, err
 			}
 			if !ok {
-				t.unchecked = "the vulnerability database has no security data for " + t.context.Distro.String()
+				t.uncheckable("the vulnerability database has no security data for " + t.context.Distro.String())
 				t.keepOnly(KindSoftware)
 			}
 		}
@@ -266,7 +269,7 @@ func (t target) findings(matches []match.Match) []Finding {
 		kind := t.kinds[m.Package.ID]
 		f := Finding{
 			Target:        t.id,
-			Package:       m.Package.Name,
+			Package:       cmp.Or(t.names[m.Package.ID], m.Package.Name),
 			Version:       m.Package.Version,
 			Kind:          kind,
 			Vulnerability: m.Vulnerability.ID,
@@ -274,6 +277,9 @@ func (t target) findings(matches []match.Match) []Finding {
 		}
 		if m.Vulnerability.Fix.State == vulnerability.FixStateFixed {
 			f.FixVersions = slices.Compact(slices.Sorted(slices.Values(m.Vulnerability.Fix.Versions)))
+			if m.Package.Type == syftPkg.GoModulePkg {
+				f.FixVersions = withoutPreReleases(f.FixVersions)
+			}
 		}
 		if md := m.Vulnerability.Metadata; md != nil {
 			if s := strings.ToLower(md.Severity); s != "" {
@@ -328,3 +334,16 @@ func merge(a, b Finding) Finding {
 }
 
 var severityRank = map[string]int{"unknown": 0, "negligible": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
+
+var goPreRelease = regexp.MustCompile(`(?i)-?(rc|beta)\.?\d*$`)
+
+// withoutPreReleases drops Go's release candidates and betas from a list of
+// fixed versions, unless they are the only fix: nobody should run one in
+// production to get a fix.
+func withoutPreReleases(versions []string) []string {
+	final := slices.DeleteFunc(slices.Clone(versions), goPreRelease.MatchString)
+	if len(final) == 0 {
+		return versions
+	}
+	return final
+}

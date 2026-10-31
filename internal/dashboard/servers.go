@@ -186,6 +186,7 @@ type imageView struct {
 	OS         string
 	NotChecked string
 	Software   []string // e.g. "node 22.11.0"
+	GoPrograms []string // e.g. "/usr/local/bin/traefik (go1.23.4)"
 	Findings   []store.Finding
 	NoFixYet   int
 }
@@ -234,6 +235,18 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 				}
 			} else if v.NotChecked == "" {
 				v.NotChecked = "not read"
+			}
+			if img.System != nil {
+				for _, p := range img.System.GoPrograms {
+					built := p.GoVersion
+					if built == "" {
+						built = "built before Go 1.18"
+					}
+					if vulns.IgnoredGoProgram(p.Path) {
+						built += ", not checked by choice"
+					}
+					v.GoPrograms = append(v.GoPrograms, p.Path+" ("+built+")")
+				}
 			}
 			for _, vv := range img.Versions {
 				if sw, ok := vulns.SoftwareName(vv.Name); ok {

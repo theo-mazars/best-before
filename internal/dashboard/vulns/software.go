@@ -20,7 +20,8 @@ var knownSoftware = []software{
 	{"PYTHON_VERSION", "python", []string{"python:python"}},
 	{"PHP_VERSION", "php", []string{"php:php"}},
 	{"RUBY_VERSION", "ruby", []string{"ruby-lang:ruby"}},
-	{"GOLANG_VERSION", "go", []string{"golang:go"}},
+	// Checked like the Go programs in images, against Go's own data.
+	{"GOLANG_VERSION", "go", nil},
 	{"JAVA_VERSION", "java", []string{"oracle:openjdk"}},
 	{"REDIS_VERSION", "redis", []string{"redis:redis"}},
 	{"PG_VERSION", "postgresql", []string{"postgresql:postgresql"}},

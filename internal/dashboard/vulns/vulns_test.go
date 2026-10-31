@@ -200,3 +200,68 @@ func TestNoOSRelease(t *testing.T) {
 		t.Errorf("image without os-release: %+v", ts[1])
 	}
 }
+
+func TestGoTargets(t *testing.T) {
+	r := &report.Report{Docker: &report.Docker{Images: []report.Image{{
+		ID:       "sha256:x",
+		Versions: []report.VersionVariable{{Name: "GOLANG_VERSION", Value: "1.23.12"}},
+		System: &report.ImageSystem{GoPrograms: []report.GoProgram{
+			{Path: "/usr/local/go/bin/gofmt", GoVersion: "go1.23.12"},
+			{Path: "/usr/local/go/pkg/tool/linux_arm64/vet", GoVersion: "go1.23.12"},
+			{Path: "/usr/local/go/pkg/tool/linux_arm64/asm", GoVersion: "go1.23.12"},
+			{Path: "/usr/local/bin/traefik", GoVersion: "go1.24.2 X:boringcrypto"},
+			{Path: "/usr/local/bin/gosu", GoVersion: "go1.24.6"}, // ignored
+			{Path: "/opt/legacy", GoVersion: ""},
+		}},
+	}}}}
+	img := targets(r)[1]
+	var got []string
+	for _, p := range img.packages {
+		got = append(got, img.names[p.ID]+"="+p.Name+"@"+p.Version)
+	}
+	// GOLANG_VERSION joins the programs of the same version, named go.
+	want := []string{"go (go, asm, gofmt, …)=stdlib@go1.23.12", "go (traefik)=stdlib@go1.24.2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got  %v\nwant %v", got, want)
+	}
+	if !strings.Contains(img.unchecked, "1 Go program(s) built before Go 1.18") {
+		t.Errorf("unchecked: %q", img.unchecked)
+	}
+}
+
+// TestGoRealDatabase checks Go programs against Go's own vulnerability data.
+func TestGoRealDatabase(t *testing.T) {
+	dir := os.Getenv("BESTBEFORE_GRYPE_DB")
+	if dir == "" {
+		t.Skip("set BESTBEFORE_GRYPE_DB to a Grype database directory")
+	}
+	db := Open(dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer db.Close()
+	r := &report.Report{Docker: &report.Docker{Images: []report.Image{{ID: "sha256:traefik",
+		System: &report.ImageSystem{GoPrograms: []report.GoProgram{{Path: "/usr/local/bin/traefik", GoVersion: "go1.22.0"}}}}}}}
+	res, err := db.Match(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range res.Findings {
+		if f.Package == "go (traefik)" && f.Vulnerability == "CVE-2023-45288" && f.Fixable() && f.Version == "go1.22.0" {
+			found = true
+		}
+	}
+	if !found || len(res.Findings) < 50 {
+		t.Errorf("%d findings, CVE-2023-45288 found: %v", len(res.Findings), found)
+	}
+}
+
+func TestWithoutPreReleases(t *testing.T) {
+	for in, want := range map[string]string{
+		"1.24.13 1.25.7 1.26.0-rc.3": "1.24.13 1.25.7",
+		"1.22.0rc2 1.21.7":           "1.21.7",
+		"1.27.0-rc.1":                "1.27.0-rc.1", // the only fix: kept
+	} {
+		if got := strings.Join(withoutPreReleases(strings.Fields(in)), " "); got != want {
+			t.Errorf("%s: got %s", in, got)
+		}
+	}
+}

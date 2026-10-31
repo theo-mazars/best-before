@@ -12,10 +12,11 @@ import (
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
-// entry is one file in a test archive: a regular file, or a symbolic link
-// when link is set.
+// entry is one file in a test archive: a regular file (mode 0644 unless
+// set), or a symbolic link when link is set.
 type entry struct {
 	name, body, link string
+	mode             int64
 }
 
 func tarOf(t *testing.T, entries ...entry) []byte {
@@ -23,7 +24,11 @@ func tarOf(t *testing.T, entries ...entry) []byte {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	for _, e := range entries {
-		h := &tar.Header{Name: e.name, Mode: 0o644, Size: int64(len(e.body)), Typeflag: tar.TypeReg}
+		mode := e.mode
+		if mode == 0 {
+			mode = 0o644
+		}
+		h := &tar.Header{Name: e.name, Mode: mode, Size: int64(len(e.body)), Typeflag: tar.TypeReg}
 		if e.link != "" {
 			h = &tar.Header{Name: e.name, Mode: 0o777, Linkname: e.link, Typeflag: tar.TypeSymlink}
 		}
@@ -89,11 +94,11 @@ func names(pkgs []report.InstalledPackage) []string {
 
 func readTestExport(t *testing.T, data []byte, want platform) (*report.ImageSystem, error) {
 	t.Helper()
-	files, err := readExport(bytes.NewReader(data), want)
+	got, err := readExport(bytes.NewReader(data), want)
 	if err != nil {
 		return nil, err
 	}
-	return parseSystem(files)
+	return parseSystem(got)
 }
 
 var amd64 = platform{"linux", "amd64"}
