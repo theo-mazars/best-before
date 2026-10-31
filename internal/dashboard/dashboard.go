@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,22 +36,26 @@ const DefaultConfigPath = "/etc/bestbefore/dashboard.conf"
 //go:embed dashboard.conf
 var ExampleConfig string
 
-var configKeys = []string{"listen", "public_url", "data_dir", "tls", "tls_cert", "tls_key", "stale_after"}
+var configKeys = []string{"listen", "public_url", "data_dir", "tls", "tls_cert", "tls_key", "trusted_proxies", "stale_after"}
 
 const (
 	TLSBuiltin = "builtin" // self-signed, generated in the data directory
 	TLSFiles   = "files"
-	TLSOff     = "off" // loopback only, behind a reverse proxy
+	TLSOff     = "off"   // loopback only, behind a reverse proxy on the same machine
+	TLSProxy   = "proxy" // any address, behind a reverse proxy that terminates TLS
 )
 
 type Config struct {
-	Listen     string
-	PublicURL  string
-	DataDir    string
-	TLS        string
-	TLSCert    string
-	TLSKey     string
-	StaleAfter time.Duration
+	Listen    string
+	PublicURL string
+	DataDir   string
+	TLS       string
+	TLSCert   string
+	TLSKey    string
+	// TrustedProxies are the reverse proxies whose forwarded headers are
+	// believed, with tls = proxy.
+	TrustedProxies []netip.Prefix
+	StaleAfter     time.Duration
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -65,6 +70,9 @@ func LoadConfig(path string) (Config, error) {
 		TLS:       v.Get("tls", TLSBuiltin),
 		TLSCert:   v.Get("tls_cert", ""),
 		TLSKey:    v.Get("tls_key", ""),
+	}
+	if c.TrustedProxies, err = parseTrustedProxies(v.Get("trusted_proxies", "")); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if c.StaleAfter, err = time.ParseDuration(v.Get("stale_after", "48h")); err != nil || c.StaleAfter <= 0 {
 		return Config{}, fmt.Errorf("%s: stale_after must be a duration such as 48h", path)
@@ -85,7 +93,11 @@ func (c Config) validate() error {
 			return errors.New("public_url must be an https:// URL (or http:// for local testing)")
 		}
 	}
+	if len(c.TrustedProxies) > 0 && c.TLS != TLSProxy {
+		return errors.New("trusted_proxies only applies with tls = proxy")
+	}
 	switch c.TLS {
+	case TLSProxy:
 	case TLSBuiltin:
 	case TLSFiles:
 		if c.TLSCert == "" || c.TLSKey == "" {
@@ -96,7 +108,7 @@ func (c Config) validate() error {
 			return errors.New("tls = off is only allowed on a loopback address, behind a reverse proxy on the same machine")
 		}
 	default:
-		return fmt.Errorf("tls must be %s, %s or %s", TLSBuiltin, TLSFiles, TLSOff)
+		return fmt.Errorf("tls must be %s, %s, %s or %s", TLSBuiltin, TLSFiles, TLSProxy, TLSOff)
 	}
 	return nil
 }
@@ -124,7 +136,9 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		return err
 	}
 
+	trust := &proxies{trusted: c.TrustedProxies}
 	in := &ingest{
+		proxies:  trust,
 		store:    st,
 		key:      key,
 		identity: identity,
@@ -133,7 +147,7 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		perIP:    newRateLimiter(30, 2*time.Second, time.Now),
 		perAgent: newRateLimiter(10, time.Minute, time.Now),
 	}
-	ui, err := newWeb(st, key, c, log, time.Now)
+	ui, err := newWeb(st, key, c, trust, log, time.Now)
 	if err != nil {
 		return err
 	}
@@ -160,6 +174,9 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 
+	if c.TLS == TLSProxy && len(c.TrustedProxies) == 0 {
+		log.Warn("tls = proxy without trusted_proxies: every visitor appears to come from the proxy, so they share its login rate limit, and the login cookie is not marked Secure. Set trusted_proxies to the proxy's address or network.")
+	}
 	if strings.HasPrefix(c.PublicURL, "http://") {
 		log.Warn("public_url uses plain HTTP: reports stay encrypted and signed, but which servers report and when is visible on the network. Use it for local testing only.")
 	}
@@ -192,7 +209,7 @@ func setupURL(c Config) string {
 		return strings.TrimSuffix(c.PublicURL, "/") + "/setup"
 	}
 	scheme := "https"
-	if c.TLS == TLSOff {
+	if c.TLS == TLSOff || c.TLS == TLSProxy {
 		scheme = "http"
 	}
 	host, port, _ := net.SplitHostPort(c.Listen)
@@ -208,7 +225,7 @@ func (c Config) tlsConfig() (*tls.Config, *x509.Certificate, error) {
 	var cert tls.Certificate
 	var err error
 	switch c.TLS {
-	case TLSOff:
+	case TLSOff, TLSProxy:
 		return nil, nil, nil
 	case TLSFiles:
 		cert, err = tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)

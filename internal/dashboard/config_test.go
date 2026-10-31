@@ -3,6 +3,7 @@ package dashboard
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func TestExampleConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{Listen: "127.0.0.1:8443", DataDir: "/var/lib/bestbefore", TLS: TLSBuiltin, StaleAfter: 48 * time.Hour}
-	if c != want {
+	if !reflect.DeepEqual(c, want) {
 		t.Errorf("example loads as %+v, want the defaults %+v", c, want)
 	}
 }

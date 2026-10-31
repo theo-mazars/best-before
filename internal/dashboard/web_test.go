@@ -49,7 +49,7 @@ func newEmptyTestWeb(t *testing.T, publicURL string) *testWeb {
 	tw := &testWeb{t: t, mux: http.NewServeMux(), store: st, now: time.Now()}
 	clock := func() time.Time { return tw.now }
 	cfg := Config{PublicURL: publicURL, TLS: TLSBuiltin, StaleAfter: 48 * time.Hour}
-	tw.w, err = newWeb(st, key, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), clock)
+	tw.w, err = newWeb(st, key, cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), clock)
 	if err != nil {
 		t.Fatal(err)
 	}

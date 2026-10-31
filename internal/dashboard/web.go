@@ -24,14 +24,18 @@ import (
 var webFiles embed.FS
 
 const (
-	sessionCookie   = "__Host-bestbefore_session"
-	sessionLifetime = 12 * time.Hour
-	sessionIdle     = time.Hour
-	codeLifetime    = time.Hour
-	maxFormBytes    = 64 << 10
+	// The strict __Host- cookie needs HTTPS; over plain HTTP behind a proxy,
+	// browsers would refuse it and login would silently fail.
+	sessionCookie      = "__Host-bestbefore_session"
+	plainSessionCookie = "bestbefore_session"
+	sessionLifetime    = 12 * time.Hour
+	sessionIdle        = time.Hour
+	codeLifetime       = time.Hour
+	maxFormBytes       = 64 << 10
 )
 
 type web struct {
+	proxies    *proxies
 	store      *store.Store
 	key        *protocol.DashboardKey
 	cfg        Config
@@ -43,8 +47,9 @@ type web struct {
 	setup      setup
 }
 
-func newWeb(st *store.Store, key *protocol.DashboardKey, cfg Config, log *slog.Logger, now func() time.Time) (*web, error) {
+func newWeb(st *store.Store, key *protocol.DashboardKey, cfg Config, trust *proxies, log *slog.Logger, now func() time.Time) (*web, error) {
 	w := &web{
+		proxies:    trust,
 		store:      st,
 		key:        key,
 		cfg:        cfg,
@@ -92,7 +97,7 @@ func (w *web) headers(h http.Handler) http.Handler {
 		hd.Set("X-Frame-Options", "DENY")
 		hd.Set("Referrer-Policy", "no-referrer")
 		hd.Set("Cache-Control", "no-store")
-		if w.cfg.TLS != TLSOff {
+		if w.proxies.https(r) {
 			hd.Set("Strict-Transport-Security", "max-age=31536000")
 		}
 		h.ServeHTTP(rw, r)
@@ -102,14 +107,14 @@ func (w *web) headers(h http.Handler) http.Handler {
 // admin requires a session of a user with the admin role.
 func (w *web) admin(h func(http.ResponseWriter, *http.Request, *store.User)) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(sessionCookie)
+		c, err := r.Cookie(w.cookieName(r))
 		if err != nil {
 			http.Redirect(rw, r, "/login", http.StatusSeeOther)
 			return
 		}
 		sess, err := w.store.TouchSession(r.Context(), hashToken(c.Value), w.now(), sessionIdle)
 		if errors.Is(err, store.ErrNotFound) {
-			w.clearSession(rw)
+			w.clearSession(rw, r)
 			http.Redirect(rw, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -138,7 +143,7 @@ func (w *web) login(rw http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.PostFormValue("email"))
 	password := r.PostFormValue("password")
 	code := strings.TrimSpace(r.PostFormValue("code"))
-	ip := remoteIP(r)
+	ip := w.proxies.clientIP(r)
 
 	refuse := func(reason string) {
 		w.log.Warn("login refused", "reason", reason, "email", email, "remote", ip)
@@ -183,8 +188,8 @@ func (w *web) login(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(rw, &http.Cookie{
-		Name: sessionCookie, Value: token, Path: "/",
-		Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		Name: w.cookieName(r), Value: token, Path: "/",
+		Secure: w.proxies.https(r), HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		MaxAge: int(sessionLifetime.Seconds()),
 	})
 	w.log.Info("logged in", "email", u.Email, "remote", ip)
@@ -192,18 +197,25 @@ func (w *web) login(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *web) logout(rw http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(sessionCookie); err == nil {
+	if c, err := r.Cookie(w.cookieName(r)); err == nil {
 		if err := w.store.DeleteSession(r.Context(), hashToken(c.Value)); err != nil {
 			w.fail(rw, r, err)
 			return
 		}
 	}
-	w.clearSession(rw)
+	w.clearSession(rw, r)
 	http.Redirect(rw, r, "/login", http.StatusSeeOther)
 }
 
-func (w *web) clearSession(rw http.ResponseWriter) {
-	http.SetCookie(rw, &http.Cookie{Name: sessionCookie, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+func (w *web) cookieName(r *http.Request) string {
+	if w.proxies.https(r) {
+		return sessionCookie
+	}
+	return plainSessionCookie
+}
+
+func (w *web) clearSession(rw http.ResponseWriter, r *http.Request) {
+	http.SetCookie(rw, &http.Cookie{Name: w.cookieName(r), Path: "/", Secure: w.proxies.https(r), HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
 type agentRow struct {

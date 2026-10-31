@@ -98,12 +98,12 @@ func (w *web) completeSetup(rw http.ResponseWriter, r *http.Request) {
 		w.renderSetup(rw, status, email, secret, message)
 	}
 
-	if !w.loginIP.allow(remoteIP(r)) {
+	if !w.loginIP.allow(w.proxies.clientIP(r)) {
 		retry(http.StatusTooManyRequests, "Too many attempts. Wait a few minutes.")
 		return
 	}
 	if !w.setup.matches(r.PostFormValue("setup_code")) {
-		w.log.Warn("setup refused", "reason", "wrong setup code", "remote", remoteIP(r))
+		w.log.Warn("setup refused", "reason", "wrong setup code", "remote", w.proxies.clientIP(r))
 		retry(http.StatusUnauthorized, "The setup code is not the one in the dashboard's log.")
 		return
 	}
@@ -138,7 +138,7 @@ func (w *web) completeSetup(rw http.ResponseWriter, r *http.Request) {
 	}
 	w.setup.finish()
 	if err == nil {
-		w.log.Info("first admin created", "email", email, "remote", remoteIP(r))
+		w.log.Info("first admin created", "email", email, "remote", w.proxies.clientIP(r))
 	}
 	http.Redirect(rw, r, "/login", http.StatusSeeOther)
 }

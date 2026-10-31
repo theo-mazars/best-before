@@ -22,6 +22,7 @@ import (
 
 // ingest receives messages from agents. Everything they send is untrusted.
 type ingest struct {
+	proxies  *proxies
 	store    *store.Store
 	key      *protocol.DashboardKey
 	identity []byte
@@ -53,7 +54,7 @@ func (in *ingest) serveIdentity(w http.ResponseWriter, r *http.Request) {
 
 func (in *ingest) handle(kind protocol.Kind, fn func(context.Context, *protocol.Envelope, []byte, string) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := remoteIP(r)
+		ip := in.proxies.clientIP(r)
 		if !in.perIP.allow(ip) {
 			in.log.Warn("rejected message", "reason", "rate limited", "kind", kind, "remote", ip)
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
@@ -196,7 +197,7 @@ func fingerprint(raw []byte) string {
 	return hex.EncodeToString(h[:6])
 }
 
-// remoteIP ignores forwarded headers until trusted proxies can be configured.
+// remoteIP is the direct peer's address; see proxies.clientIP for the client's.
 func remoteIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
