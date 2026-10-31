@@ -5,13 +5,13 @@
 **Best Before** is a read-only, self-hosted security monitor for small Ubuntu + Docker fleets. It answers three questions in one dashboard:
 
 1. Which host packages (APT) need updating, and which of those are security fixes?
-2. Which running Docker images contain known vulnerabilities (CVEs)?
+2. Which running Docker images contain known vulnerabilities (CVEs) in their operating system, their runtimes (Node, Python, Java…) or the Go programs they ship?
 3. Which running images are out of date: a newer tag exists, or the image ships an end-of-life runtime?
 
 You get a weekly digest, and an immediate alert when something urgent appears.
 
 > [!WARNING]
-> Best Before is at an early stage. Agents can enrol and report to the dashboard, but the dashboard does not analyse reports yet: vulnerability matching, alerts and digests are still to come.
+> Best Before is at an early stage. Agents report their host and images, and the dashboard finds their known vulnerabilities. Checks for outdated images and end-of-life runtimes, alerts and digests are still to come.
 
 ## How it works
 
@@ -23,13 +23,15 @@ You get a weekly digest, and an immediate alert when something urgent appears.
 ```
 
 - **`bestbefore-agent`** runs on each server from a systemd timer, collects an inventory, sends one report and exits. It never listens on the network and never changes anything on the server.
-- **`bestbefore`** is the dashboard, a container with an embedded web UI and a single SQLite file.
+- **`bestbefore`** is the dashboard, a container with an embedded web UI and a single SQLite file. It checks reports against the [Grype](https://github.com/anchore/grype) vulnerability database, which it downloads and keeps current, and counts only vulnerabilities that have a fix.
+
+Best Before watches the system, not your applications' dependencies (npm, pip, Go modules…): tools such as Dependabot already cover those in your repositories.
 
 **Run the dashboard on a VPN or private network only. Never expose it to the internet.** It holds a complete map of every vulnerable package on every server.
 
 ### Security model
 
-- **Agents push; the dashboard never connects to a server.** Agents open no port.
+- **Agents push; the dashboard never connects to a server.** Agents open no port. The dashboard's only outbound connection is to download vulnerability data, with certificates always checked.
 - **Enrolment is a one-time code** created in the dashboard and pasted on the server. It carries the dashboard's identity, so the agent checks who it talks to before sending anything, then pins it.
 - **Reports are encrypted to the dashboard and signed by the agent**, with replay protection, independently of TLS: a reverse proxy only ever sees ciphertext. The dashboard treats every report as untrusted input.
 - **The dashboard can only answer "accepted" or "rejected".** It cannot send instructions, configuration or updates to agents.
@@ -38,7 +40,7 @@ You get a weekly digest, and an immediate alert when something urgent appears.
 
 ## Guides
 
-- [Running the dashboard](docs/dashboard.md): starting it, the first admin, users, backups.
+- [Running the dashboard](docs/dashboard.md): starting it, the first admin, users, the vulnerability database, backups.
 - [Running the agent](docs/agent.md): installing, enrolling, Docker access, the systemd service.
 
 ## Development
@@ -81,8 +83,8 @@ Run `make check-pins` when you start working on a change, and commit any update 
 | Path | Contents |
 |---|---|
 | `cmd/` | Entry points of `bestbefore-agent` and `bestbefore` |
-| `internal/agent/` | Agent: enrolment, sending reports; `host/` and `docker/` collect |
-| `internal/dashboard/` | Dashboard: report ingestion, web UI, users; `store/` holds the SQLite schema |
+| `internal/agent/` | Agent: enrolment, sending reports; `host/` and `docker/` collect, `pkgdb/` reads package databases (dpkg, apk, RPM) |
+| `internal/dashboard/` | Dashboard: report ingestion, web UI, users; `store/` holds the SQLite schema, `vulns/` matches inventories with Grype |
 | `internal/protocol/` | How agents and the dashboard trust each other: keys, enrolment codes, signed messages |
 | `internal/report/` | Report schema shared by both |
 | `internal/config/` | The `key = value` configuration format |
