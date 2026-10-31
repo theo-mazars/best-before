@@ -139,16 +139,49 @@ the server. See [the agent's documentation](agent.md).
 A server is shown as **stale** when it has not reported for `stale_after`
 (48 hours by default): silence is a problem, never a clean server.
 
+## Vulnerability database
+
+The dashboard checks every report against the
+[Grype](https://github.com/anchore/grype) vulnerability database, which it
+downloads from `grype.anchore.io` and keeps in `data_dir/vulnerability-db`:
+
+- The first start downloads about **200 MB**, which unpacks to about **3.5
+  GB**. Allow **8 GB** free in the volume: during an update, the old and new
+  databases briefly coexist.
+- The dashboard looks for a newer database every 6 hours (Anchore publishes
+  one a day). After each update, it checks every server's latest report again,
+  so a vulnerability published today is found in a report sent last week.
+- It needs outbound HTTPS to `grype.anchore.io`, and trusted CA certificates
+  (included in the image; install `ca-certificates` if you run the binary
+  directly). Behind a proxy that inspects HTTPS, set `SSL_CERT_FILE` to a
+  bundle that includes the proxy's CA. The dashboard still never connects to
+  your servers.
+- If updates keep failing, the database is refused once it is more than 5 days
+  old, and servers are shown as **not checked yet** rather than clean.
+
+Host and image packages are checked against their distribution's own security
+data (Ubuntu, Debian, Alpine, Red Hat and its rebuilds, Oracle Linux, Amazon
+Linux, SUSE Linux Enterprise…), which knows about backported fixes. When the
+database has no data for an image's distribution (openSUSE Leap, for
+example), the image is shown as **not checked**, never as clean. Software
+found through `*_VERSION` variables (Node, Python, Redis…) is checked by version
+against the NVD, which is noisier.
+
+Only vulnerabilities **with a fix available** count towards a server's status.
+Those without one are listed on the server's page under **No fix yet**, and
+move up once a fix is published.
+
 ## Backups
 
 Everything is in the `bestbefore-data` volume. Back it up regularly, and above
-all `identity.key`: without it, every server has to be enrolled again.
+all `identity.key`: without it, every server has to be enrolled again. Leave
+out the vulnerability database: it is large, and downloaded again if missing.
 
 ```sh
 docker stop bestbefore
 docker run --rm -v bestbefore-data:/data:ro -v "$PWD:/backup" \
   ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 \
-  tar -czf /backup/bestbefore-backup.tar.gz -C /data .
+  tar -czf /backup/bestbefore-backup.tar.gz --exclude=./vulnerability-db -C /data .
 docker start bestbefore
 ```
 

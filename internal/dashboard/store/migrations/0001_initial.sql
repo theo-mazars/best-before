@@ -50,9 +50,40 @@ CREATE TABLE enrolment_codes (
 	CHECK ((used_at IS NULL) = (agent_id IS NULL))
 ) STRICT;
 
+-- matched_sequence is the report whose inventory the findings below come
+-- from; a report is "not checked yet" until it equals sequence.
 CREATE TABLE latest_reports (
-	agent_id    TEXT    NOT NULL PRIMARY KEY REFERENCES agents (id),
-	received_at INTEGER NOT NULL,
-	sequence    INTEGER NOT NULL CHECK (sequence > 0),
-	body        TEXT    NOT NULL CHECK (json_valid(body))
+	agent_id         TEXT    NOT NULL PRIMARY KEY REFERENCES agents (id),
+	received_at      INTEGER NOT NULL,
+	sequence         INTEGER NOT NULL CHECK (sequence > 0),
+	body             TEXT    NOT NULL CHECK (json_valid(body)),
+	matched_sequence INTEGER,
+	matched_at       INTEGER,
+	matched_db_built INTEGER,
+	-- Targets whose packages could not be checked, as a JSON object of
+	-- target to reason.
+	unchecked        TEXT    CHECK (unchecked IS NULL OR json_valid(unchecked)),
+	CHECK ((matched_sequence IS NULL) = (matched_at IS NULL))
+) STRICT;
+
+-- The vulnerabilities in each agent's latest report. target is 'host' or an
+-- image ID. fix_versions is empty when no fix exists: such findings are
+-- silent. first_seen_at and fixable_since survive re-matching, so that a new
+-- finding, or a fix becoming available, can be told apart.
+CREATE TABLE findings (
+	agent_id        TEXT    NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
+	target          TEXT    NOT NULL CHECK (length(target) BETWEEN 1 AND 128),
+	package         TEXT    NOT NULL,
+	version         TEXT    NOT NULL,
+	kind            TEXT    NOT NULL CHECK (kind IN ('package', 'software')),
+	vulnerability   TEXT    NOT NULL,
+	severity        TEXT    NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low', 'negligible', 'unknown')),
+	cvss            REAL    NOT NULL CHECK (cvss BETWEEN 0 AND 10),
+	fix_versions    TEXT    NOT NULL,
+	known_exploited INTEGER NOT NULL CHECK (known_exploited IN (0, 1)),
+	url             TEXT    NOT NULL,
+	first_seen_at   INTEGER NOT NULL,
+	fixable_since   INTEGER,
+	CHECK ((fixable_since IS NULL) = (fix_versions = '')),
+	PRIMARY KEY (agent_id, target, package, vulnerability)
 ) STRICT;

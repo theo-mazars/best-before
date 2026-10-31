@@ -1,0 +1,99 @@
+{{define "title"}}{{.Server.Hostname}} · Best Before{{end}}
+{{define "content"}}
+<h1>{{.Server.Hostname}}</h1>
+<p>Status: <strong>{{.Server.Status}}</strong>.
+Last report: {{date .Server.LastReportAt}}.
+{{with .Report}}{{if .Matched}}Checked {{date .MatchedAt}} against the database built {{date .MatchedDBBuilt}}.{{else}}Not checked against the vulnerability database yet.{{end}}{{end}}
+</p>
+{{template "db" .DB}}
+{{range .Server.Problems}}<p><strong>Problem:</strong> {{.}}</p>{{end}}
+
+{{with .Body}}
+<h2>Host</h2>
+<ul>
+	<li>{{.Host.OS.Name}}, kernel {{.Host.Kernel}}</li>
+	<li>Up for {{duration .Host.UptimeSeconds}}</li>
+	<li>Reboot: {{if .Host.RebootRequired}}<strong>required</strong>{{with .Host.RebootRequiredPackages}} by {{join . ", "}}{{end}}{{else}}not required{{end}}</li>
+	<li>Package lists published {{date .Host.APT.ListsPublishedAt}}</li>
+	<li>Agent {{.AgentVersion}}</li>
+</ul>
+
+<h3>Updates available ({{$.Server.SecurityUpdates}} security, {{$.Server.Updates}} in all)</h3>
+{{if $.Upgradable}}
+<table>
+	<thead><tr><th>Package</th><th>Installed</th><th>Available</th><th>Security</th></tr></thead>
+	<tbody>
+	{{range $.Upgradable}}
+		<tr><td>{{.Name}}</td><td>{{.CurrentVersion}}</td><td>{{.CandidateVersion}}</td><td>{{if .Security}}yes{{end}}</td></tr>
+	{{end}}
+	</tbody>
+</table>
+{{else}}<p>None.</p>{{end}}
+
+<h3>Vulnerabilities with a fix</h3>
+{{template "findings" $.HostFindings}}
+
+<h2>Images</h2>
+{{range $.Images}}
+<details{{if .Findings}} open{{end}}>
+	<summary>{{if .References}}{{join .References ", "}}{{else}}{{.ID}}{{end}}:
+		{{len .Findings}} with a fix, {{.NoFixYet}} without{{with .NotChecked}}, <strong>not checked: {{.}}</strong>{{end}}</summary>
+	<ul>
+		<li>Containers: {{join .Containers ", "}}</li>
+		<li>Image ID: <code>{{.ID}}</code></li>
+		{{with .OS}}<li>System: {{.}}</li>{{end}}
+		{{with .Software}}<li>Software checked by version: {{join . ", "}}</li>{{end}}
+	</ul>
+	{{template "findings" .Findings}}
+</details>
+{{else}}
+<p>No running containers.</p>
+{{end}}
+
+<h2>No fix yet ({{len $.Unfixed}})</h2>
+<p>These vulnerabilities have no fixed version. They never raise the server's status; they move up when a fix is published.</p>
+{{if $.Unfixed}}
+<details>
+	<summary>Show them</summary>
+	<table>
+		<thead><tr><th>Where</th><th>Package</th><th>Version</th><th>Vulnerability</th><th>Severity</th><th>CVSS</th><th>Known exploited</th></tr></thead>
+		<tbody>
+		{{range $.Unfixed}}
+			<tr>
+				<td>{{.Where}}</td><td>{{.Package}}</td><td>{{.Version}}</td>
+				<td>{{if .URL}}<a href="{{.URL}}" rel="noreferrer">{{.Vulnerability}}</a>{{else}}{{.Vulnerability}}{{end}}</td>
+				<td>{{.Severity}}</td><td>{{if .CVSS}}{{printf "%.1f" .CVSS}}{{end}}</td><td>{{if .KnownExploited}}yes{{end}}</td>
+			</tr>
+		{{end}}
+		</tbody>
+	</table>
+</details>
+{{end}}
+{{else}}
+<p>No report yet.</p>
+{{end}}
+{{end}}
+
+{{define "findings"}}
+{{if .}}
+<table>
+	<thead><tr><th>Package</th><th>Version</th><th>Fixed in</th><th>Vulnerability</th><th>Severity</th><th>CVSS</th><th>Known exploited</th><th>First seen</th></tr></thead>
+	<tbody>
+	{{range .}}
+		<tr>
+			<td>{{.Package}}{{if eq .Kind "software"}} (by version){{end}}</td>
+			<td>{{.Version}}</td>
+			<td>{{join .FixVersions ", "}}</td>
+			<td>{{if .URL}}<a href="{{.URL}}" rel="noreferrer">{{.Vulnerability}}</a>{{else}}{{.Vulnerability}}{{end}}</td>
+			<td>{{.Severity}}</td>
+			<td>{{if .CVSS}}{{printf "%.1f" .CVSS}}{{end}}</td>
+			<td>{{if .KnownExploited}}<strong>yes</strong>{{end}}</td>
+			<td>{{date .FirstSeenAt}}</td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
+{{else}}
+<p>None.</p>
+{{end}}
+{{end}}

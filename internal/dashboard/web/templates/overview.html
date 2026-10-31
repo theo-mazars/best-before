@@ -1,0 +1,47 @@
+{{define "title"}}Overview · Best Before{{end}}
+{{define "content"}}
+<h1>Overview</h1>
+{{template "db" .DB}}
+
+{{if .Servers}}
+<table>
+	<thead>
+		<tr>
+			<th>Server</th>
+			<th>Status</th>
+			<th>Critical</th>
+			<th>High</th>
+			<th>Medium</th>
+			<th>Known exploited</th>
+			<th>Security updates</th>
+			<th>Reboot</th>
+			<th>Images</th>
+			<th>No fix yet</th>
+			<th>Last report</th>
+		</tr>
+	</thead>
+	<tbody>
+	{{range .Servers}}
+		<tr>
+			<td><a href="/servers/{{.ID}}">{{.Hostname}}</a></td>
+			<td>{{.Status}}</td>
+			<td>{{.Critical}}</td>
+			<td>{{.High}}</td>
+			<td>{{.Medium}}</td>
+			<td>{{.KnownExploited}}</td>
+			<td>{{.SecurityUpdates}} of {{.Updates}}</td>
+			<td>{{if .RebootRequired}}required{{else}}no{{end}}</td>
+			<td>{{.Images}}{{if .NotChecked}} ({{.NotChecked}} not checked){{end}}</td>
+			<td>{{.NoFixYet}}</td>
+			<td>{{date .LastReportAt}}</td>
+		</tr>
+		{{range .Problems}}<tr><td></td><td colspan="10">Problem: {{.}}</td></tr>{{end}}
+	{{end}}
+	</tbody>
+</table>
+<p>Counts only include vulnerabilities with a fix available. Those without one are listed on each server's page and never raise its status.</p>
+{{else}}
+<p>No servers yet. The fridge is empty: <a href="/agents">add a server</a> to see what's inside.</p>
+{{end}}
+{{end}}
+

@@ -30,6 +30,8 @@ type ingest struct {
 	now      func() time.Time
 	perIP    *rateLimiter
 	perAgent *rateLimiter
+	// reported is told about each accepted report, to match it.
+	reported func(agentID string)
 }
 
 // rejection is a reason safe to tell the agent.
@@ -169,6 +171,9 @@ func (in *ingest) report(ctx context.Context, e *protocol.Envelope, raw []byte, 
 	err = in.store.RecordReport(ctx, a.ID, e.Sequence, protocol.RequestID(raw), in.now(), body)
 	if errors.Is(err, store.ErrStaleSequence) {
 		return reject("sequence number already used, or agent revoked")
+	}
+	if err == nil && in.reported != nil {
+		in.reported(a.ID)
 	}
 	return err
 }

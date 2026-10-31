@@ -25,6 +25,7 @@ import (
 
 	"github.com/theo-mazars/best-before/internal/config"
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
+	"github.com/theo-mazars/best-before/internal/dashboard/vulns"
 	"github.com/theo-mazars/best-before/internal/protocol"
 )
 
@@ -136,6 +137,12 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		return err
 	}
 
+	db := vulns.Open(filepath.Join(c.DataDir, "vulnerability-db"), log)
+	defer db.Close()
+	match := newMatching(db, st, log, time.Now)
+	go match.run(ctx)
+	go match.updateLoop(ctx)
+
 	trust := &proxies{trusted: c.TrustedProxies}
 	in := &ingest{
 		proxies:  trust,
@@ -146,8 +153,9 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		now:      time.Now,
 		perIP:    newRateLimiter(30, 2*time.Second, time.Now),
 		perAgent: newRateLimiter(10, time.Minute, time.Now),
+		reported: match.enqueue,
 	}
-	ui, err := newWeb(st, key, c, trust, log, time.Now)
+	ui, err := newWeb(st, db, key, c, trust, log, time.Now)
 	if err != nil {
 		return err
 	}

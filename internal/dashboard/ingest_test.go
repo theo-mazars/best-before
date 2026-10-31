@@ -131,6 +131,8 @@ func TestEnrolAndReport(t *testing.T) {
 	code := d.newCode()
 
 	expect(t, "enrol", d.enrol(agent, code.Secret[:]), protocol.Accepted, "")
+	var queued []string
+	d.in.reported = func(id string) { queued = append(queued, id) }
 
 	msg := d.sealReport(agent, 1, validReport())
 	r, status := d.send("/api/v1/reports", msg)
@@ -155,6 +157,11 @@ func TestEnrolAndReport(t *testing.T) {
 
 	r, _ = d.send("/api/v1/reports", d.sealReport(agent, 2, validReport()))
 	expect(t, "next report", r, protocol.Accepted, "")
+
+	// Each new report is queued for matching; the retry was already stored.
+	if len(queued) != 2 || queued[0] != a.ID {
+		t.Errorf("queued for matching: %v", queued)
+	}
 }
 
 func TestEnrolRejections(t *testing.T) {
@@ -185,7 +192,7 @@ func TestReportRejections(t *testing.T) {
 	expect(t, "wrong kind", r, protocol.Rejected, "kind")
 
 	// Payloads are decoded strictly against the schema.
-	withExtra := map[string]any{"schema_version": 1, "host": map[string]any{}, "run": "rm -rf /"}
+	withExtra := map[string]any{"schema_version": report.SchemaVersion, "host": map[string]any{}, "run": "rm -rf /"}
 	r, _ = d.send("/api/v1/reports", d.sealReport(agent, 1, withExtra))
 	expect(t, "unknown field", r, protocol.Rejected, "invalid report")
 

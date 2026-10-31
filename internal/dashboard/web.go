@@ -8,6 +8,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/theo-mazars/best-before/internal/dashboard/auth"
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
+	"github.com/theo-mazars/best-before/internal/dashboard/vulns"
 	"github.com/theo-mazars/best-before/internal/protocol"
 )
 
@@ -37,6 +39,7 @@ const (
 type web struct {
 	proxies    *proxies
 	store      *store.Store
+	db         interface{ Status() vulns.Status }
 	key        *protocol.DashboardKey
 	cfg        Config
 	log        *slog.Logger
@@ -47,10 +50,11 @@ type web struct {
 	setup      setup
 }
 
-func newWeb(st *store.Store, key *protocol.DashboardKey, cfg Config, trust *proxies, log *slog.Logger, now func() time.Time) (*web, error) {
+func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protocol.DashboardKey, cfg Config, trust *proxies, log *slog.Logger, now func() time.Time) (*web, error) {
 	w := &web{
 		proxies:    trust,
 		store:      st,
+		db:         db,
 		key:        key,
 		cfg:        cfg,
 		log:        log,
@@ -59,8 +63,8 @@ func newWeb(st *store.Store, key *protocol.DashboardKey, cfg Config, trust *prox
 		loginEmail: newRateLimiter(5, 5*time.Minute, now),
 		pages:      map[string]*template.Template{},
 	}
-	funcs := template.FuncMap{"date": formatDate}
-	for _, page := range []string{"login", "setup", "agents", "code", "error"} {
+	funcs := template.FuncMap{"date": formatDate, "join": strings.Join, "duration": formatDuration}
+	for _, page := range []string{"login", "setup", "agents", "code", "error", "overview", "server"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -81,9 +85,8 @@ func (w *web) routes(mux *http.ServeMux) {
 	mux.Handle("GET /login", page(http.HandlerFunc(w.loginPage)))
 	mux.Handle("POST /login", page(http.HandlerFunc(w.login)))
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
-	mux.Handle("GET /{$}", page(w.admin(func(rw http.ResponseWriter, r *http.Request, _ *store.User) {
-		http.Redirect(rw, r, "/agents", http.StatusSeeOther)
-	})))
+	mux.Handle("GET /{$}", page(w.admin(w.overview)))
+	mux.Handle("GET /servers/{id}", page(w.admin(w.serverPage)))
 	mux.Handle("GET /agents", page(w.admin(w.agentsPage)))
 	mux.Handle("POST /agents/codes", page(w.admin(w.createCode)))
 	mux.Handle("POST /agents/{id}/revoke", page(w.admin(w.revoke)))
@@ -193,7 +196,7 @@ func (w *web) login(rw http.ResponseWriter, r *http.Request) {
 		MaxAge: int(sessionLifetime.Seconds()),
 	})
 	w.log.Info("logged in", "email", u.Email, "remote", ip)
-	http.Redirect(rw, r, "/agents", http.StatusSeeOther)
+	http.Redirect(rw, r, "/", http.StatusSeeOther)
 }
 
 func (w *web) logout(rw http.ResponseWriter, r *http.Request) {
@@ -370,4 +373,15 @@ func formatDate(t any) string {
 		return t.UTC().Format("2 Jan 2006, 15:04 UTC")
 	}
 	return ""
+}
+
+// formatDuration shows an uptime in days and hours.
+func formatDuration(seconds int64) string {
+	d := time.Duration(seconds) * time.Second
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	if days == 0 {
+		return fmt.Sprintf("%d h", hours)
+	}
+	return fmt.Sprintf("%d d %d h", days, hours)
 }
