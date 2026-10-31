@@ -1,0 +1,59 @@
+:root {
+	--fg: #1d2125;
+	--muted: #5f6b76;
+	--bg: #f7f8f9;
+	--card: #ffffff;
+	--line: #dde1e5;
+	--accent: #2f6f4f;
+	--danger: #b3261e;
+	--warn: #8a5a00;
+	font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+	color: var(--fg);
+	background: var(--bg);
+}
+
+body { margin: 0; }
+header {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 0.75rem 1.5rem; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; color: var(--accent); }
+nav { display: flex; align-items: center; gap: 1rem; }
+nav form { margin: 0; }
+.who { color: var(--muted); }
+main { max-width: 72rem; margin: 2rem auto; padding: 0 1.5rem; }
+.narrow { max-width: 28rem; }
+.heading { display: flex; align-items: center; justify-content: space-between; }
+
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: 600; }
+input { font: inherit; padding: 0.5rem; border: 1px solid var(--line); border-radius: 4px; }
+button {
+	font: inherit; padding: 0.5rem 1rem; border: 0; border-radius: 4px;
+	background: var(--accent); color: #fff; cursor: pointer;
+}
+button.danger { background: var(--danger); }
+button.link { background: none; color: var(--accent); padding: 0; }
+
+table { width: 100%; border-collapse: collapse; background: var(--card); }
+th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.9rem; }
+tr.revoked td { color: var(--muted); }
+td form { margin: 0; }
+small { color: var(--muted); }
+
+.status { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.85rem; white-space: nowrap; }
+.status-reporting { background: #e3f1e8; color: var(--accent); }
+.status-stale { background: #fde7e5; color: var(--danger); }
+.status-revoked { background: #eceff1; color: var(--muted); }
+.status-waiting { background: #fdf1dc; color: var(--warn); }
+
+.error { padding: 0.75rem; border-left: 4px solid var(--danger); background: #fde7e5; }
+.note { color: var(--muted); }
+.empty { color: var(--muted); padding: 2rem 0; }
+.qr { width: 12rem; height: 12rem; display: block; }
+.key { letter-spacing: 0.05em; }
+pre.code {
+	padding: 1rem; background: var(--fg); color: #fff; border-radius: 4px;
+	white-space: pre-wrap; word-break: break-all; user-select: all;
+}

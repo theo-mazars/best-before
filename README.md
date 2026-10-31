@@ -11,7 +11,7 @@
 You get a weekly digest, and an immediate alert when something urgent appears.
 
 > [!WARNING]
-> Best Before is at a very early stage and is not usable yet.
+> Best Before is at an early stage. Agents can enrol and report to the dashboard, but the dashboard does not analyse reports yet: vulnerability matching, alerts and digests are still to come.
 
 ## How it works
 
@@ -22,68 +22,36 @@ You get a weekly digest, and an immediate alert when something urgent appears.
                                                              SQLite + web UI (VPN only)
 ```
 
-- **`bestbefore-agent`** runs on each server from a systemd timer, collects an inventory, sends one signed report and exits. It never listens on a socket and never changes anything on the server.
-- **`bestbefore`** is the dashboard: a single binary with an embedded web UI and a single SQLite file. It matches inventories against vulnerability data and sends notifications.
+- **`bestbefore-agent`** runs on each server from a systemd timer, collects an inventory, sends one report and exits. It never listens on the network and never changes anything on the server.
+- **`bestbefore`** is the dashboard, a container with an embedded web UI and a single SQLite file.
 
 **Run the dashboard on a VPN or private network only. Never expose it to the internet.** It holds a complete map of every vulnerable package on every server.
 
-## The agent
+### Security model
 
-### See exactly what leaves your server
+- **Agents push; the dashboard never connects to a server.** Agents open no port.
+- **Enrolment is a one-time code** created in the dashboard and pasted on the server. It carries the dashboard's identity, so the agent checks who it talks to before sending anything, then pins it.
+- **Reports are encrypted to the dashboard and signed by the agent**, with replay protection, independently of TLS: a reverse proxy only ever sees ciphertext. The dashboard treats every report as untrusted input.
+- **The dashboard can only answer "accepted" or "rejected".** It cannot send instructions, configuration or updates to agents.
+- **Docker is read through a socket proxy** allowing only the agent's read requests, never through the socket itself.
+- **Logins need a password and an authenticator app.**
 
-```sh
-bestbefore-agent --dry-run
-```
+## Guides
 
-prints the full report as JSON and sends nothing. It contains:
+- [Running the dashboard](docs/dashboard.md): starting it, the first admin, users, backups.
+- [Running the agent](docs/agent.md): installing, enrolling, Docker access, the systemd service.
 
-- **Host:** OS, kernel, hostname, uptime, whether a reboot is required, every installed package (with its source package), and the packages that can be upgraded, with security updates flagged.
-- **Docker:** running containers (name, image as written, image ID, Compose project and service) and, for each image, its registry digests.
+## Development
 
-Anything the agent could not collect is listed in the report (`host.errors`, `docker.available` / `docker.error`), so a gap is never mistaken for a clean server.
-
-Servers without Docker are perfectly normal: the report simply has no `docker` section, and nothing about Docker appears anywhere. If Docker *is* installed but the agent cannot read it (daemon stopped, missing permission), that is reported as a problem, because containers may be running unseen.
-
-The agent does not run `apt-get update`. It reads the package lists your system already keeps current (Ubuntu's `apt-daily` timer does this by default) and records how recent they are in `host.apt.lists_published_at`.
-
-### Docker access
-
-> [!IMPORTANT]
-> **Access to the Docker socket is equivalent to root on the host**, whatever the agent does with it.
-
-The agent only ever sends `GET` requests to the Docker API, and tests fail the build if that changes. It never pulls images or touches containers. That limits what *our code* does, not what a process holding the socket *could* do, so we recommend putting the agent behind a socket proxy that only allows the read endpoints it needs, and pointing it there:
-
-```sh
-bestbefore-agent --docker-host tcp://127.0.0.1:2375 --dry-run
-```
-
-`--docker-host` defaults to `$DOCKER_HOST`, then to `unix:///var/run/docker.sock` if Docker is installed.
-
-## Repository layout
-
-| Path | Contents |
-|---|---|
-| `cmd/bestbefore-agent/` | Entry point of the agent binary |
-| `cmd/bestbefore/` | Entry point of the dashboard binary |
-| `internal/agent/` | Agent logic: collection, signing, push |
-| `internal/agent/host/` | Host and APT collection |
-| `internal/agent/docker/` | Read-only Docker API client |
-| `internal/report/` | Report schema shared by agent and dashboard |
-| `internal/dashboard/` | Dashboard logic: ingestion, matching, web UI, alerts |
-| `internal/version/` | Build metadata shared by both |
-
-## Building
-
-Requires Go (see `go.mod` for the version).
+Building and testing need only Go (see `go.mod` for the version), on Linux or macOS.
 
 ```sh
 make build   # binaries in ./bin
 make check   # formatting, vet and tests: run this before pushing
+make image   # the dashboard's container image
 ```
 
 CI on GitHub Actions runs only when triggered by hand, so `make check` is the main safeguard.
-
-Building and testing need only Go, on Linux or macOS.
 
 ### Trying the agent
 
@@ -99,7 +67,7 @@ Container mode mounts your container engine's socket, which is root-equivalent: 
 
 ### Pinned images
 
-Container images used in this repository are pinned by tag and digest (`ubuntu:24.04@sha256:…`), so a build never silently changes underneath us. Tags such as `ubuntu:24.04` are rebuilt regularly, so the pins need refreshing:
+Container images used in this repository are pinned by tag and digest (`ubuntu:24.04@sha256:…`), so a build never silently changes underneath us. Tags are rebuilt regularly, so the pins need refreshing:
 
 ```sh
 make check-pins    # lists pins whose tag has a newer build (needs only curl)
@@ -107,6 +75,20 @@ make update-pins   # rewrites them
 ```
 
 Run `make check-pins` when you start working on a change, and commit any update on its own.
+
+### Repository layout
+
+| Path | Contents |
+|---|---|
+| `cmd/` | Entry points of `bestbefore-agent` and `bestbefore` |
+| `internal/agent/` | Agent: enrolment, sending reports; `host/` and `docker/` collect |
+| `internal/dashboard/` | Dashboard: report ingestion, web UI, users; `store/` holds the SQLite schema |
+| `internal/protocol/` | How agents and the dashboard trust each other: keys, enrolment codes, signed messages |
+| `internal/report/` | Report schema shared by both |
+| `internal/config/` | The `key = value` configuration format |
+| `packaging/` | Dashboard image, agent systemd units, Docker socket proxy |
+| `docs/` | Guides for operators |
+| `scripts/` | Development tools |
 
 ## Security
 

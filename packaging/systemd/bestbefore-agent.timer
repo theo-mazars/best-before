@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily Best Before report
+
+[Timer]
+OnCalendar=daily
+# Spread a fleet's reports over an hour.
+RandomizedDelaySec=1h
+# Report at boot if the machine was off at the scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

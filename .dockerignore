@@ -1,0 +1,8 @@
+# The image is built from source: only the Go module and the image's files.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!packaging/docker/
+**/*_test.go

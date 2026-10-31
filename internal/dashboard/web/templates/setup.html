@@ -1,0 +1,37 @@
+{{define "title"}}Set up · Best Before{{end}}
+{{define "content"}}
+<section class="narrow">
+	<h1>Create the first admin</h1>
+	<p>The setup code is printed in the dashboard's log, for example with <code>docker logs</code>.</p>
+	{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+	<form method="post" action="/setup" class="stack">
+		<input type="hidden" name="totp_secret" value="{{.Secret}}">
+		<label>Setup code
+			<input type="text" name="setup_code" autocomplete="off" required autofocus>
+		</label>
+		<label>Email
+			<input type="email" name="email" autocomplete="username" required value="{{.Email}}">
+		</label>
+		<label>Password <small>at least 12 characters</small>
+			<input type="password" name="password" autocomplete="new-password" required minlength="12">
+		</label>
+		<label>Password again
+			<input type="password" name="password_again" autocomplete="new-password" required minlength="12">
+		</label>
+		<div>
+			<p><strong>Authenticator</strong><br>Scan this code with your authenticator app, or enter the key by hand.</p>
+			{{if .QRPath}}
+			<svg class="qr" viewBox="-4 -4 {{.QRSize}} {{.QRSize}}" role="img" aria-label="QR code for your authenticator app">
+				<rect x="-4" y="-4" width="100%" height="100%" fill="#fff"/>
+				<path d="{{.QRPath}}"/>
+			</svg>
+			{{end}}
+			<p><code class="key">{{.SecretKey}}</code></p>
+		</div>
+		<label>Code from the app
+			<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+		</label>
+		<button>Create admin</button>
+	</form>
+</section>
+{{end}}
