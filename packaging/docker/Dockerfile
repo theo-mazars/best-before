@@ -3,7 +3,7 @@
 #
 #   docker build -f packaging/docker/Dockerfile --build-arg VERSION=v0.1.0 .
 
-FROM golang:1.26.4-alpine3.24@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS build
+FROM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./

@@ -61,7 +61,16 @@ prints the full report as JSON and sends nothing:
   installed package with its source package, and the packages that can be
   upgraded, with security updates flagged.
 - **Docker:** running containers (name, image as written, image ID, Compose
-  project and service) and, for each image, its registry digests.
+  project and service) and, for each image, its registry digests, its
+  operating system and the packages its package manager installed, as for the
+  host: name, version, architecture, source package. The agent reads the
+  records of `dpkg` (Debian, Ubuntu, distroless), `apk` (Alpine) and `rpm`
+  (Red Hat, Rocky, Alma, Oracle Linux, Amazon Linux, Fedora, SUSE), in all
+  three of RPM's database formats, with its own small readers.
+  Also each image's environment variables named `*_VERSION`, such as
+  `NODE_VERSION=22.23.4`: official images set them for software installed
+  without the package manager (Node, Python, PHP, Java, Redis, PostgreSQL…).
+  No other environment variable is read, as they may hold secrets.
 
 Anything the agent could not collect is listed in the report, so a gap is
 never mistaken for a clean server. Servers without Docker simply have no Docker
@@ -83,8 +92,14 @@ that changes. The proxy enforces it outside the agent as well.
 
 [`packaging/socket-proxy/compose.yaml`](../packaging/socket-proxy/compose.yaml)
 runs [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy)
-with exactly the four requests the agent makes: no container logs, no file
-downloads, no writes. It listens on the host's `127.0.0.1` only, so other
+with exactly the five requests the agent makes: no container logs, no files
+from running containers, no writes.
+
+To read an image's packages, the agent exports the image through the API, as
+`docker save` does, and reads the archive as it streams past. It keeps only
+the package lists and os-release, never writes the image to disk, and never
+pulls anything. Each image is read once and remembered by its ID in the
+agent's state directory, so the first run takes longest. It listens on the host's `127.0.0.1` only, so other
 containers cannot reach it.
 
 ```sh

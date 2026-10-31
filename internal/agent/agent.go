@@ -41,7 +41,8 @@ func Run(ctx context.Context, o Options) error {
 		if cfg, err := LoadConfig(o.ConfigPath); err == nil {
 			dockerSetting = cfg.Docker
 		}
-		r, err := collect(ctx, override(dockerSetting, o.DockerHost))
+		// No cache: a dry run shows what is read now, and leaves no trace.
+		r, err := collect(ctx, override(dockerSetting, o.DockerHost), nil)
 		if err != nil {
 			return err
 		}
@@ -67,9 +68,13 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 
-	r, err := collect(ctx, override(cfg.Docker, o.DockerHost))
+	images := st.images()
+	r, err := collect(ctx, override(cfg.Docker, o.DockerHost), images)
 	if err != nil {
 		return err
+	}
+	if r.Docker != nil && r.Docker.Available {
+		images.keepOnly(r.Docker.Images)
 	}
 	seq, err := st.nextSequence()
 	if err != nil {
@@ -97,8 +102,8 @@ func override(setting, host string) string {
 	return setting
 }
 
-func collect(ctx context.Context, dockerSetting string) (*report.Report, error) {
-	d, err := collectDocker(ctx, dockerSetting)
+func collect(ctx context.Context, dockerSetting string, cache docker.Cache) (*report.Report, error) {
+	d, err := collectDocker(ctx, dockerSetting, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +125,7 @@ var (
 // collectDocker returns nil when Docker is off, or absent with the default
 // socket setting. An explicit host must be reachable, or the failure is
 // reported.
-func collectDocker(ctx context.Context, setting string) (*report.Docker, error) {
+func collectDocker(ctx context.Context, setting string, cache docker.Cache) (*report.Docker, error) {
 	host := setting
 	switch setting {
 	case DockerOff:
@@ -135,7 +140,7 @@ func collectDocker(ctx context.Context, setting string) (*report.Docker, error) 
 	if err != nil {
 		return nil, err
 	}
-	d := docker.Collect(ctx, client)
+	d := docker.Collect(ctx, client, cache)
 	if !d.Available && setting != host {
 		d.Error += "; Docker is installed but the agent cannot read its socket. Set up a socket proxy, then run: bestbefore-agent configure docker tcp://host:port (or: off)"
 	}

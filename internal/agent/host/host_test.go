@@ -12,50 +12,6 @@ import (
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
-func TestParseDpkgStatus(t *testing.T) {
-	const status = `Package: libc6
-Status: install ok installed
-Priority: optional
-Architecture: arm64
-Multi-Arch: same
-Source: glibc
-Version: 2.39-0ubuntu8.4
-Description: GNU C Library: Shared libraries
- Contains the standard libraries that are used by nearly all programs on
- the system.
-
-Package: removed-but-configured
-Status: deinstall ok config-files
-Architecture: arm64
-Version: 1.0
-
-Package: libssl3t64
-Status: hold ok installed
-Architecture: arm64
-Source: openssl (3.0.13-0ubuntu3.5)
-Version: 3.0.13-0ubuntu3.5
-
-Package: bash
-Status: install ok installed
-Architecture: arm64
-Version: 5.2.21-2ubuntu4
-Conffiles:
- /etc/bash.bashrc 89269e1298235f1b12b4c16e4065ad0d
-`
-	got, err := parseDpkgStatus(strings.NewReader(status))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []report.InstalledPackage{
-		{Name: "bash", Version: "5.2.21-2ubuntu4", Architecture: "arm64", Source: "bash", SourceVersion: "5.2.21-2ubuntu4"},
-		{Name: "libc6", Version: "2.39-0ubuntu8.4", Architecture: "arm64", Source: "glibc", SourceVersion: "2.39-0ubuntu8.4"},
-		{Name: "libssl3t64", Version: "3.0.13-0ubuntu3.5", Architecture: "arm64", Source: "openssl", SourceVersion: "3.0.13-0ubuntu3.5"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got  %+v\nwant %+v", got, want)
-	}
-}
-
 func TestParseSimulation(t *testing.T) {
 	const out = `Reading package lists...
 Building dependency tree...

@@ -20,6 +20,8 @@ type state struct {
 func (s state) keyPath() string { return filepath.Join(s.dir, "agent.key") }
 func (s state) seqPath() string { return filepath.Join(s.dir, "sequence") }
 
+func (s state) images() imageCache { return imageCache{dir: filepath.Join(s.dir, "images")} }
+
 func (s state) enrolled() bool {
 	_, err := os.Stat(s.keyPath())
 	return err == nil

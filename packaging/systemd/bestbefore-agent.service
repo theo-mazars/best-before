@@ -9,7 +9,10 @@ ConditionPathExists=/etc/bestbefore/agent.conf
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/bestbefore-agent
-TimeoutStartSec=15min
+# The first run reads every image in use; later runs only new ones.
+TimeoutStartSec=1h
+Nice=10
+IOSchedulingClass=idle
 User=bestbefore-agent
 Group=bestbefore-agent
 StateDirectory=bestbefore-agent
@@ -17,7 +20,7 @@ StateDirectoryMode=0700
 UMask=0077
 
 # The agent only reads the system, talks to the dashboard over the network
-# and writes its sequence number.
+# and writes its sequence number and image cache.
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=

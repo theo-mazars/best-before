@@ -19,7 +19,7 @@ import (
 
 func TestCollectOnlyUsesGET(t *testing.T) {
 	srv, methods := fakeEngine(t)
-	Collect(context.Background(), newTestClient(t, srv))
+	Collect(context.Background(), newTestClient(t, srv), nil)
 
 	calls := methods()
 	if len(calls) == 0 {

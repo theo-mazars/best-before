@@ -151,7 +151,7 @@ func TestEndToEnd(t *testing.T) {
 	if len(agents) != 1 || agents[0].LastSequence != 2 {
 		t.Fatalf("agents: %+v", agents)
 	}
-	if body, err := e.store.LatestReport(ctx, agents[0].ID); err != nil || !bytes.Contains(body, []byte(`"schema_version":1`)) {
+	if body, err := e.store.LatestReport(ctx, agents[0].ID); err != nil || !bytes.Contains(body, []byte(`"schema_version":2`)) {
 		t.Errorf("stored report: %s, %v", body, err)
 	}
 
