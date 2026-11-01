@@ -54,7 +54,7 @@ func tlsPolicy(pinned []byte, caFile string) (*tls.Config, error) {
 		return &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			// Chain and name checks are replaced by the pin, checked below.
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: true, // tlscheck:replaced by the pin
 			VerifyConnection: func(cs tls.ConnectionState) error {
 				if len(cs.PeerCertificates) == 0 || !bytes.Equal(protocol.TLSKeyHash(cs.PeerCertificates[0]), pinned) {
 					return errors.New("the dashboard's TLS key is not the one pinned at enrolment")

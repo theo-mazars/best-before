@@ -98,7 +98,7 @@ func discover(ctx context.Context, code *protocol.EnrolmentCode, caFile string) 
 	var peer []*x509.Certificate
 	probe := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // tlscheck:replaced by the identity check below
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			peer = cs.PeerCertificates
 			return nil

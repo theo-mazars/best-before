@@ -1,35 +1,41 @@
-package host
+// Package pkgdb reads the records package managers keep of what they
+// installed, for the host and for the inside of images alike.
+package pkgdb
 
 import (
 	"bufio"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
-func readDpkgStatus(path string) ([]report.InstalledPackage, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return parseDpkgStatus(f)
+// ParseDpkgStatus parses the dpkg status database (deb822 stanzas separated
+// by blank lines) and returns the packages that are actually installed.
+func ParseDpkgStatus(r io.Reader) ([]report.InstalledPackage, error) {
+	return parseDpkg(r, true)
 }
 
-// parseDpkgStatus parses the dpkg status database (deb822 stanzas separated
-// by blank lines) and returns the packages that are actually installed.
-func parseDpkgStatus(r io.Reader) ([]report.InstalledPackage, error) {
+// ParseDpkgStatusD parses one file of /var/lib/dpkg/status.d, where
+// distroless images record their packages, one file per package. These
+// records have no Status field: everything listed is installed.
+func ParseDpkgStatusD(r io.Reader) ([]report.InstalledPackage, error) {
+	return parseDpkg(r, false)
+}
+
+func parseDpkg(r io.Reader, hasStatus bool) ([]report.InstalledPackage, error) {
 	pkgs := []report.InstalledPackage{}
 	fields := map[string]string{}
 
 	flush := func() {
 		defer clear(fields)
+		if fields["Package"] == "" {
+			return
+		}
 		// Status is "<want> <flag> <state>"; only "installed" counts.
 		status := strings.Fields(fields["Status"])
-		if fields["Package"] == "" || len(status) != 3 || status[2] != "installed" {
+		if hasStatus && (len(status) != 3 || status[2] != "installed") {
 			return
 		}
 		p := report.InstalledPackage{
@@ -73,11 +79,16 @@ func parseDpkgStatus(r io.Reader) ([]report.InstalledPackage, error) {
 	}
 	flush()
 
+	Sort(pkgs)
+	return pkgs, nil
+}
+
+// Sort orders packages by name, then architecture.
+func Sort(pkgs []report.InstalledPackage) {
 	sort.Slice(pkgs, func(i, j int) bool {
 		if pkgs[i].Name != pkgs[j].Name {
 			return pkgs[i].Name < pkgs[j].Name
 		}
 		return pkgs[i].Architecture < pkgs[j].Architecture
 	})
-	return pkgs, nil
 }

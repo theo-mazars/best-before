@@ -6,7 +6,6 @@
 package host
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/theo-mazars/best-before/internal/agent/pkgdb"
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
@@ -104,28 +104,16 @@ func readOSRelease(path string) (report.OS, error) {
 		return report.OS{}, err
 	}
 	defer f.Close()
+	return pkgdb.ParseOSRelease(f)
+}
 
-	fields := map[string]string{}
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		key, value, ok := strings.Cut(strings.TrimSpace(sc.Text()), "=")
-		if !ok || strings.HasPrefix(key, "#") {
-			continue
-		}
-		if v, err := strconv.Unquote(value); err == nil {
-			value = v
-		}
-		fields[key] = value
+func readDpkgStatus(path string) ([]report.InstalledPackage, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	if err := sc.Err(); err != nil {
-		return report.OS{}, err
-	}
-	return report.OS{
-		ID:        fields["ID"],
-		Name:      fields["PRETTY_NAME"],
-		VersionID: fields["VERSION_ID"],
-		Codename:  fields["VERSION_CODENAME"],
-	}, nil
+	defer f.Close()
+	return pkgdb.ParseDpkgStatus(f)
 }
 
 func readUptime(path string) (int64, error) {

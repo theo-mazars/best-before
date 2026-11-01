@@ -63,8 +63,9 @@ var errNotFound = errors.New("not found")
 
 // Client talks to the Docker Engine API with GET requests only.
 type Client struct {
-	http *http.Client
-	base string
+	http   *http.Client
+	stream *http.Client
+	base   string
 }
 
 // NewClient accepts "unix:///path/to/docker.sock" or "tcp://host:port"
@@ -100,8 +101,33 @@ func NewClient(host string) (*Client, error) {
 			Transport: getOnly{transport},
 			Timeout:   time.Minute,
 		},
-		base: base,
+		// Image exports can take minutes; their callers set a deadline.
+		stream: &http.Client{Transport: getOnly{transport}},
+		base:   base,
 	}, nil
+}
+
+// open starts a GET request whose body is streamed to the caller, who must
+// close it.
+func (c *Client) open(ctx context.Context, path string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.stream.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		resp.Body.Close()
+		return nil, errNotFound
+	case resp.StatusCode != http.StatusOK:
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		resp.Body.Close()
+		return nil, fmt.Errorf("GET %s: %s: %s", path, resp.Status, strings.TrimSpace(string(msg)))
+	}
+	return resp.Body, nil
 }
 
 // get fetches an API path and decodes the JSON response into out.

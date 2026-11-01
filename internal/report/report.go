@@ -7,7 +7,7 @@ package report
 import "time"
 
 // SchemaVersion is the version of the report format defined in this package.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // Report is one collection run on one server.
 type Report struct {
@@ -67,6 +67,9 @@ type InstalledPackage struct {
 	// Ubuntu security notices refer to.
 	Source        string `json:"source"`
 	SourceVersion string `json:"source_version"`
+	// Module is the RPM modularity label (RHEL 8 and 9 module streams),
+	// which decides which security advisories apply.
+	Module string `json:"module,omitempty"`
 }
 
 // UpgradablePackage is an installed package with a newer candidate.
@@ -117,4 +120,52 @@ type Image struct {
 	CreatedAt    time.Time `json:"created_at"`
 	OS           string    `json:"os"`
 	Architecture string    `json:"architecture"`
+	// Versions are the image's environment variables named *_VERSION, such
+	// as NODE_VERSION=22.11.0, which official images set for software
+	// installed without the package manager. The dashboard decides which
+	// ones name software it can check.
+	Versions []VersionVariable `json:"versions"`
+	// System is what the image's own package manager installed, read from
+	// the image's files. Nil when the image could not be read; SystemError
+	// then says why, and the image must be shown as not scanned.
+	System      *ImageSystem `json:"system"`
+	SystemError string       `json:"system_error,omitempty"`
+}
+
+// VersionVariable is one environment variable from an image's
+// configuration.
+type VersionVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// Package managers whose records the agent reads inside images.
+const (
+	PackageManagerDpkg = "dpkg"
+	PackageManagerApk  = "apk"
+	PackageManagerRPM  = "rpm"
+)
+
+// ImageSystem is the operating system inside an image.
+type ImageSystem struct {
+	// OS comes from the image's os-release; empty for images without one,
+	// such as images built FROM scratch.
+	OS OS `json:"os"`
+	// PackageManager is PackageManagerDpkg, PackageManagerApk,
+	// PackageManagerRPM, or "" when
+	// the image has no package records at all (e.g. a single static
+	// binary), in which case Packages is empty.
+	PackageManager string             `json:"package_manager"`
+	Packages       []InstalledPackage `json:"packages"`
+	// GoPrograms are the image's Go executables, which carry a copy of the
+	// Go standard library of the version that built them.
+	GoPrograms []GoProgram `json:"go_programs"`
+}
+
+// GoProgram is one Go executable inside an image.
+type GoProgram struct {
+	Path string `json:"path"`
+	// GoVersion is the Go release that built it, e.g. "go1.23.4"; empty for
+	// programs built before Go 1.18, whose version the agent does not read.
+	GoVersion string `json:"go_version"`
 }
