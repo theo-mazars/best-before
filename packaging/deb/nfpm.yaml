@@ -1,0 +1,59 @@
+# The agent's Debian package, built by scripts/dist.sh (make dist) with nfpm.
+# The script stages every file in BUILD_DIR dated from the release commit, so
+# that a rebuild is identical.
+
+name: bestbefore-agent
+arch: ${DEB_ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+section: admin
+priority: optional
+maintainer: Theo Mazars <me@theomazars.com>
+homepage: https://github.com/theo-mazars/best-before
+license: AGPL-3.0-only
+description: |-
+  Best Before agent: reports this server's packages and containers
+  Collects a read-only inventory of this Ubuntu server, its upgradable APT
+  packages and the system packages inside its running Docker images, and
+  pushes it, signed and encrypted, to a Best Before dashboard, which checks
+  it for known vulnerabilities. It runs once a day from a systemd timer,
+  never listens on the network and never changes anything on the server.
+
+# The service user comes from sysusers.d, and the unit's sandboxing needs
+# systemd 249 (Ubuntu 22.04) or later: SocketBindDeny= keeps the agent from
+# listening.
+depends:
+  - systemd (>= 249)
+
+contents:
+  - expand: true
+    src: ${BUILD_DIR}/bestbefore-agent
+    dst: /usr/bin/bestbefore-agent
+    file_info:
+      mode: 0755
+  - expand: true
+    src: ${BUILD_DIR}/bestbefore-agent.service
+    dst: /usr/lib/systemd/system/bestbefore-agent.service
+    file_info:
+      mode: 0644
+  - expand: true
+    src: ${BUILD_DIR}/bestbefore-agent.timer
+    dst: /usr/lib/systemd/system/bestbefore-agent.timer
+    file_info:
+      mode: 0644
+  - expand: true
+    src: ${BUILD_DIR}/bestbefore-agent.sysusers
+    dst: /usr/lib/sysusers.d/bestbefore-agent.conf
+    file_info:
+      mode: 0644
+  - expand: true
+    src: ${BUILD_DIR}/copyright
+    dst: /usr/share/doc/bestbefore-agent/copyright
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: packaging/deb/postinst
+  preremove: packaging/deb/prerm
+  postremove: packaging/deb/postrm

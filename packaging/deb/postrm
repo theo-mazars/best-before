@@ -1,0 +1,23 @@
+#!/bin/sh
+# Purging also deletes the enrolment and the agent's private key: revoke the
+# agent in the dashboard as well. The service user stays, as Debian advises,
+# so that no file can end up owned by a future user with the same ID.
+set -e
+
+case "$1" in
+purge)
+	rm -rf /var/lib/bestbefore-agent
+	rm -f /etc/bestbefore/agent.conf /etc/bestbefore/agent.conf.tmp
+	rmdir /etc/bestbefore 2>/dev/null || true
+	;;
+esac
+
+case "$1" in
+remove | purge)
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload
+	fi
+	;;
+esac
+
+exit 0

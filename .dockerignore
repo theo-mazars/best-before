@@ -1,5 +1,7 @@
-# The image is built from source: only the Go module and the image's files.
+# The image is built from source: only the Go module, the licence and the
+# image's files.
 *
+!LICENSE
 !go.mod
 !go.sum
 !cmd/

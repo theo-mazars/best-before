@@ -1,0 +1,2 @@
+# The agent's service user: no login shell, no home, no privileges.
+u bestbefore-agent - "Best Before agent" - -

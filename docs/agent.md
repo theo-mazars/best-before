@@ -7,22 +7,23 @@ anything on the server.
 
 ## Installing
 
-A `.deb` package will come with the first release. Until then, build the agent
-from a checkout for the server's architecture (`amd64` or `arm64`):
+The agent supports Ubuntu 22.04 or later, on `amd64` or `arm64`
+(`dpkg --print-architecture` tells you which). Download its `.deb` from the
+[latest release](https://github.com/theo-mazars/best-before/releases), check
+it as described in [Releases](releases.md#verifying-a-release), copy it to the
+server, then:
 
 ```sh
-make build-linux LINUX_ARCH=amd64
+sudo apt install ./bestbefore-agent_0.1.0_amd64.deb
 ```
 
-then, on the server:
+The package installs the agent, its systemd service and timer, and a
+`bestbefore-agent` system user. It starts nothing: the agent has nothing to do
+until it is enrolled. To update, install the new version's package the same
+way; enrolment and settings are kept.
 
-```sh
-sudo install -m 0755 bin/linux-amd64/bestbefore-agent /usr/bin/
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin bestbefore-agent
-sudo install -m 0644 packaging/systemd/bestbefore-agent.service \
-  packaging/systemd/bestbefore-agent.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-```
+To build the package yourself instead, see
+[Reproducing a release](releases.md#reproducing-a-release).
 
 ## Enrolling
 
@@ -167,10 +168,11 @@ page, then:
 sudo bestbefore-agent enrol bb1_… --force
 ```
 
-To remove the agent, disable the timer and delete its files, then revoke it on
-the Agents page:
+To remove the agent, purge its package, then revoke it on the Agents page:
 
 ```sh
-sudo systemctl disable --now bestbefore-agent.timer
-sudo rm -r /etc/bestbefore/agent.conf /var/lib/bestbefore-agent
+sudo apt purge bestbefore-agent
 ```
+
+Purging deletes the enrolment and the agent's private key. `apt remove` keeps
+them, so that after reinstalling, enabling the timer again is enough.

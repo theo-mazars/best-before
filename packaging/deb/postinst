@@ -1,0 +1,18 @@
+#!/bin/sh
+# Installing does not enable the timer: the agent has nothing to do until
+# it is enrolled with "bestbefore-agent enrol".
+set -e
+
+case "$1" in
+configure)
+	systemd-sysusers bestbefore-agent.conf
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload
+	fi
+	if [ -z "$2" ]; then
+		echo "Enrol this server with the code from the dashboard: sudo bestbefore-agent enrol bb1_…"
+	fi
+	;;
+esac
+
+exit 0
