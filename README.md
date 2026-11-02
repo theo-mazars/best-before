@@ -97,4 +97,6 @@ See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
 ## Licence
 
-To be decided before the first public release.
+Best Before is free software under the [GNU Affero General Public License v3.0](LICENSE)
+(AGPL-3.0-only): you may use, change and share it, and if you let others use a
+modified version over a network, you must offer them its source.
