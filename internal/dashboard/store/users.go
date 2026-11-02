@@ -11,6 +11,9 @@ import (
 const (
 	RoleAdmin = "admin"
 	RoleUser  = "user"
+
+	// DefaultMinSeverity is what a new user's pages show, as in the schema.
+	DefaultMinSeverity = "low"
 )
 
 var (
@@ -26,7 +29,9 @@ type User struct {
 	PasswordHash string
 	TOTPSecret   []byte
 	Role         string
-	CreatedAt    time.Time
+	// MinSeverity is the lowest severity the user's pages show.
+	MinSeverity string
+	CreatedAt   time.Time
 }
 
 type Session struct {
@@ -37,7 +42,7 @@ type Session struct {
 const (
 	insertUser = `INSERT INTO users (id, email, password_hash, totp_secret, role, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)`
-	selectUsers       = `SELECT id, email, password_hash, totp_secret, role, created_at FROM users`
+	selectUsers       = `SELECT id, email, password_hash, totp_secret, role, min_severity, created_at FROM users`
 	selectUserByEmail = selectUsers + ` WHERE email = ?`
 	selectUserByID    = selectUsers + ` WHERE id = ?`
 	selectAllUsers    = selectUsers + ` ORDER BY email`
@@ -45,6 +50,7 @@ const (
 	countOtherAdmins  = `SELECT count(*) FROM users WHERE role = 'admin' AND id != ?`
 	updateUserRole    = `UPDATE users SET role = ? WHERE id = ?`
 	updatePassword    = `UPDATE users SET password_hash = ? WHERE id = ?`
+	updateMinSeverity = `UPDATE users SET min_severity = ? WHERE id = ?`
 	updateTOTP        = `UPDATE users SET totp_secret = ?, totp_last_step = ? WHERE id = ?`
 	deleteUser        = `DELETE FROM users WHERE id = ?`
 	deleteUserSession = `DELETE FROM sessions WHERE user_id = ?`
@@ -62,7 +68,7 @@ const (
 )
 
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash, role string, totpSecret []byte, now time.Time) (*User, error) {
-	u := User{ID: newID(), Email: email, PasswordHash: passwordHash, TOTPSecret: totpSecret, Role: role, CreatedAt: now.UTC().Truncate(time.Second)}
+	u := User{ID: newID(), Email: email, PasswordHash: passwordHash, TOTPSecret: totpSecret, Role: role, MinSeverity: DefaultMinSeverity, CreatedAt: now.UTC().Truncate(time.Second)}
 	_, err := s.db.ExecContext(ctx, insertUser, u.ID, u.Email, u.PasswordHash, u.TOTPSecret, u.Role, unix(now))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
@@ -171,6 +177,12 @@ func (s *Store) Users(ctx context.Context) ([]User, error) {
 	return users, rows.Err()
 }
 
+// SetMinSeverity changes the lowest severity the user's pages show. Unlike
+// the changes below, it leaves the user's sessions alone.
+func (s *Store) SetMinSeverity(ctx context.Context, id, severity string) error {
+	return oneRow(s.db.ExecContext(ctx, updateMinSeverity, severity, id))
+}
+
 // The changes below also end every session of the user, so that they take
 // effect at once.
 
@@ -231,7 +243,7 @@ func (s *Store) changeUser(ctx context.Context, id string, removesAdmin bool, ch
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var created int64
-	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TOTPSecret, &u.Role, &created)
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TOTPSecret, &u.Role, &u.MinSeverity, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

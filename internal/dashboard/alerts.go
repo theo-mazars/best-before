@@ -205,9 +205,15 @@ func (a *alerter) checkAgent(ctx context.Context, ag *store.Agent, open map[aler
 	if err != nil {
 		return nil, err
 	}
+	rs, err := loadRisks(ctx, a.store, ag.ID)
+	if err != nil {
+		return nil, err
+	}
+	// An accepted risk is no emergency until it expires; its alert closes,
+	// and is raised again then.
 	current := map[string][]store.Finding{}
 	for _, f := range findings {
-		if isEmergency(&f, settings) {
+		if isEmergency(&f, settings) && rs.active(&f, now) == nil {
 			current[f.Vulnerability] = append(current[f.Vulnerability], f)
 		}
 	}

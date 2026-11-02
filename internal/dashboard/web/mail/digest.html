@@ -33,6 +33,11 @@
 <p>Severity {{$.MinSeverity}} or worse, found or given a fix since the last digest.</p>
 {{template "servers" .}}
 {{end}}
+{{with .Accepted}}
+<h2>Accepted risks expiring</h2>
+<p>Expired since the last digest, or expiring within a week. Once expired, they count again.</p>
+{{template "servers" .}}
+{{end}}
 <p>Vulnerabilities without a fix are not listed: they are on each server's page.</p>
 </body>
 </html>
@@ -41,7 +46,7 @@
 {{range .}}
 <h3>{{template "server" .}}</h3>
 <ul>
-{{range .Findings}}<li>{{if .URL}}<a href="{{.URL}}">{{.Line}}</a>{{else}}{{.Line}}{{end}}</li>
+{{range .Findings}}<li>{{if .URL}}<a href="{{.URL}}">{{.Line}}</a>{{else}}{{.Line}}{{end}}{{with .Note}}<br>{{.}}{{end}}</li>
 {{end}}</ul>
 {{end}}
 {{end}}

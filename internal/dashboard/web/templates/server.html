@@ -7,6 +7,7 @@ Last report: {{date .Server.LastReportAt}}.
 </p>
 {{template "db" .DB}}
 {{range .Server.Problems}}<p><strong>Problem:</strong> {{.}}</p>{{end}}
+<p>Showing vulnerabilities of severity {{if eq .User.MinSeverity "negligible"}}negligible or worse: everything{{else}}{{.User.MinSeverity}} or worse{{end}} (<a href="/settings">change</a>).</p>
 
 {{with .Body}}
 <h2>Host</h2>
@@ -56,18 +57,44 @@ Last report: {{date .Server.LastReportAt}}.
 {{if $.Unfixed}}
 <details>
 	<summary>Show them</summary>
-	<table>
-		<thead><tr><th>Where</th><th>Package</th><th>Version</th><th>Vulnerability</th><th>Severity</th><th>CVSS</th><th>Known exploited</th></tr></thead>
-		<tbody>
-		{{range $.Unfixed}}
-			<tr>
-				<td>{{.Where}}</td><td>{{.Package}}</td><td>{{.Version}}</td>
-				<td>{{if .URL}}<a href="{{.URL}}" rel="noreferrer">{{.Vulnerability}}</a>{{else}}{{.Vulnerability}}{{end}}</td>
-				<td>{{.Severity}}</td><td>{{if .CVSS}}{{printf "%.1f" .CVSS}}{{end}}</td><td>{{if .KnownExploited}}yes{{end}}</td>
-			</tr>
-		{{end}}
-		</tbody>
-	</table>
+	{{template "elsewhere" $.Unfixed}}
+</details>
+{{end}}
+
+<h2>Accepted risks ({{len $.Accepted}})</h2>
+<p>Until they expire, these do not count towards the server's status, raise no emergency and are left out of the digest.</p>
+{{if $.Accepted}}
+<table>
+	<thead><tr><th>Where</th><th>Package</th><th>Vulnerability</th><th>Severity</th><th>Fixed in</th><th>Why</th><th>Accepted</th><th>Until</th><th></th></tr></thead>
+	<tbody>
+	{{range $.Accepted}}
+		<tr>
+			<td>{{.Where}}</td><td>{{.Package}} {{.Version}}</td>
+			<td>{{if .URL}}<a href="{{.URL}}" rel="noreferrer">{{.Vulnerability}}</a>{{else}}{{.Vulnerability}}{{end}}{{if .KnownExploited}}, <strong>known exploited</strong>{{end}}</td>
+			<td>{{.Severity}}</td><td>{{if .FixVersions}}{{join .FixVersions ", "}}{{else}}no fix yet{{end}}</td>
+			<td>{{.Risk.Reason}}</td>
+			<td>{{date .Risk.AcceptedAt}}{{with .Risk.AcceptedBy}} by {{.}}{{end}}</td>
+			<td>{{date .Risk.ExpiresAt}}</td>
+			<td>
+				<a href="{{.AcceptURL}}">Change</a>
+				<form method="post" action="/servers/{{$.Agent.ID}}/risks/withdraw">
+					<input type="hidden" name="target" value="{{.Target}}">
+					<input type="hidden" name="vulnerability" value="{{.Vulnerability}}">
+					<button>Withdraw</button>
+				</form>
+			</td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
+{{end}}
+
+<h2>Below your threshold ({{len $.Below}})</h2>
+<p>Less severe than {{$.User.MinSeverity}}: they do not count towards the server's status on your pages.</p>
+{{if $.Below}}
+<details>
+	<summary>Show them</summary>
+	{{template "elsewhere" $.Below}}
 </details>
 {{end}}
 {{else}}
@@ -78,7 +105,7 @@ Last report: {{date .Server.LastReportAt}}.
 {{define "findings"}}
 {{if .}}
 <table>
-	<thead><tr><th>Package</th><th>Version</th><th>Fixed in</th><th>Vulnerability</th><th>Severity</th><th>CVSS</th><th>Known exploited</th><th>First seen</th></tr></thead>
+	<thead><tr><th>Package</th><th>Version</th><th>Fixed in</th><th>Vulnerability</th><th>Severity</th><th>CVSS</th><th>Known exploited</th><th>First seen</th><th></th></tr></thead>
 	<tbody>
 	{{range .}}
 		<tr>
@@ -90,6 +117,7 @@ Last report: {{date .Server.LastReportAt}}.
 			<td>{{if .CVSS}}{{printf "%.1f" .CVSS}}{{end}}</td>
 			<td>{{if .KnownExploited}}<strong>yes</strong>{{end}}</td>
 			<td>{{date .FirstSeenAt}}</td>
+			<td><a href="{{.AcceptURL}}">Accept</a></td>
 		</tr>
 	{{end}}
 	</tbody>
@@ -97,4 +125,20 @@ Last report: {{date .Server.LastReportAt}}.
 {{else}}
 <p>None.</p>
 {{end}}
+{{end}}
+
+{{define "elsewhere"}}
+<table>
+	<thead><tr><th>Where</th><th>Package</th><th>Version</th><th>Fixed in</th><th>Vulnerability</th><th>Severity</th><th>CVSS</th><th>Known exploited</th><th></th></tr></thead>
+	<tbody>
+	{{range .}}
+		<tr>
+			<td>{{.Where}}</td><td>{{.Package}}</td><td>{{.Version}}</td><td>{{join .FixVersions ", "}}</td>
+			<td>{{if .URL}}<a href="{{.URL}}" rel="noreferrer">{{.Vulnerability}}</a>{{else}}{{.Vulnerability}}{{end}}</td>
+			<td>{{.Severity}}</td><td>{{if .CVSS}}{{printf "%.1f" .CVSS}}{{end}}</td><td>{{if .KnownExploited}}yes{{end}}</td>
+			<td><a href="{{.AcceptURL}}">Accept</a></td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
 {{end}}

@@ -41,6 +41,9 @@ type AlertSettings struct {
 	// DigestNewMinSeverity is the lowest severity of the new vulnerabilities
 	// listed, empty for none.
 	DigestNewMinSeverity string
+	// DigestAccepted lists accepted risks that expired since the last digest
+	// or expire within a week.
+	DigestAccepted bool
 	// DigestAllClear sends a digest even with nothing to say.
 	DigestAllClear bool
 }
@@ -75,10 +78,11 @@ const (
 
 	selectAlertSettings = `SELECT emergency_known_exploited, emergency_min_cvss, reminder_days, digest_weekday,
 		digest_minute, digest_timezone, digest_sent_at, digest_emergencies, digest_stale, digest_updates,
-		digest_new_min_severity, digest_all_clear FROM alert_settings WHERE id = 1`
+		digest_new_min_severity, digest_accepted, digest_all_clear FROM alert_settings WHERE id = 1`
 	updateAlertSettings = `UPDATE alert_settings SET emergency_known_exploited = ?, emergency_min_cvss = ?,
 		reminder_days = ?, digest_weekday = ?, digest_minute = ?, digest_timezone = ?, digest_emergencies = ?,
-		digest_stale = ?, digest_updates = ?, digest_new_min_severity = ?, digest_all_clear = ? WHERE id = 1`
+		digest_stale = ?, digest_updates = ?, digest_new_min_severity = ?, digest_accepted = ?, digest_all_clear = ?
+		WHERE id = 1`
 	updateDigestSent = `UPDATE alert_settings SET digest_sent_at = ? WHERE id = 1`
 
 	selectAlerts = `SELECT agent_id, kind, vulnerability, raised_at, notified_at FROM alerts
@@ -168,7 +172,7 @@ func (s *Store) AlertSettings(ctx context.Context) (*AlertSettings, error) {
 	var severity sql.NullString
 	err := s.db.QueryRowContext(ctx, selectAlertSettings).Scan(&a.EmergencyKnownExploited, &cvss, &a.ReminderDays,
 		&weekday, &a.DigestMinute, &a.DigestTimezone, &sent, &a.DigestEmergencies, &a.DigestStale, &a.DigestUpdates,
-		&severity, &a.DigestAllClear)
+		&severity, &a.DigestAccepted, &a.DigestAllClear)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +201,7 @@ func (s *Store) SetAlertSettings(ctx context.Context, a *AlertSettings) error {
 	}
 	_, err := s.db.ExecContext(ctx, updateAlertSettings, a.EmergencyKnownExploited, cvss, a.ReminderDays, weekday,
 		a.DigestMinute, a.DigestTimezone, a.DigestEmergencies, a.DigestStale, a.DigestUpdates,
-		nullString(a.DigestNewMinSeverity), a.DigestAllClear)
+		nullString(a.DigestNewMinSeverity), a.DigestAccepted, a.DigestAllClear)
 	return err
 }
 

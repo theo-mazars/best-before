@@ -277,6 +277,38 @@ func TestEmergencyRules(t *testing.T) {
 	}
 }
 
+// An accepted risk raises no emergency, and accepting one closes it; once
+// the acceptance expires, it is sent again.
+func TestAcceptedRiskAlerts(t *testing.T) {
+	at := newAlertTest(t)
+	at.addHook(true, false)
+	start := at.now
+	at.store.AcceptRisk(at.ctx, at.agent.ID, vulns.TargetHost, criticalOnHost.Vulnerability, "Not exposed", "", at.now, at.now.Add(48*time.Hour))
+	at.report(1, criticalOnHost, kevInImage)
+	got := at.check()
+	if len(got) != 1 || !strings.Contains(got[0]["text"].(string), "CVE-2026-1000") || strings.Contains(got[0]["text"].(string), "CVE-2026-2000") {
+		t.Fatalf("got %v", got)
+	}
+
+	at.store.AcceptRisk(at.ctx, at.agent.ID, testImage, kevInImage.Vulnerability, "Patched by hand", "", at.now, at.now.Add(72*time.Hour))
+	at.now = at.now.Add(time.Hour)
+	if got := at.check(); len(got) != 0 {
+		t.Errorf("after accepting: %v", titles(got))
+	}
+	if open, _ := at.store.Alerts(at.ctx); len(open) != 0 {
+		t.Errorf("still open: %+v", open)
+	}
+
+	// The host's acceptance has expired; the image's runs on.
+	at.now = start.Add(49 * time.Hour)
+	at.report(2, criticalOnHost, kevInImage)
+	got = at.check()
+	if len(got) != 1 || got[0]["title"] != "Emergency on web-01: 1 vulnerability to fix now" ||
+		!strings.Contains(got[0]["text"].(string), "CVE-2026-2000") || strings.Contains(got[0]["text"].(string), "CVE-2026-1000") {
+		t.Errorf("after expiry: %v", got)
+	}
+}
+
 func TestStaleServerAlerts(t *testing.T) {
 	at := newAlertTest(t)
 	at.addHook(true, false)
@@ -355,7 +387,13 @@ func TestDigestSentWeekly(t *testing.T) {
 // with -update after changing them on purpose.
 func TestDigestGolden(t *testing.T) {
 	at := newAlertTest(t)
-	at.report(1, kevInImage, highOnHost, unfixedKEV)
+	at.report(1, kevInImage, highOnHost, unfixedKEV, criticalOnHost)
+	// An accepted emergency, listed only as expiring soon, and an acceptance
+	// that has just expired.
+	at.store.AcceptRisk(at.ctx, at.agent.ID, vulns.TargetHost, criticalOnHost.Vulnerability, "Only reachable <over the VPN>", "",
+		at.now, at.now.Add(3*24*time.Hour))
+	at.store.AcceptRisk(at.ctx, at.agent.ID, vulns.TargetHost, highOnHost.Vulnerability, "Waiting for the\nmaintenance window", "",
+		at.now.Add(-10*24*time.Hour), at.now.Add(-24*time.Hour))
 	// A server that has gone quiet.
 	at.store.CreateEnrolmentCode(at.ctx, [32]byte{2}, "", at.now, at.now.Add(time.Hour))
 	k, _ := protocol.GenerateAgentKey()
@@ -371,7 +409,7 @@ func TestDigestGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Title != "Best Before weekly digest: 1 emergency, 1 stale server, 1 server with security updates, 1 new vulnerability" {
+	if m.Title != "Best Before weekly digest: 1 emergency, 1 stale server, 1 server with security updates, 1 new vulnerability, 2 accepted risks expiring" {
 		t.Errorf("title: %q", m.Title)
 	}
 	golden(t, "digest.txt", ids.Replace(m.Text))
@@ -427,6 +465,35 @@ func TestDigestSections(t *testing.T) {
 	}
 	if got := at.hook.take(); len(got) != 1 || got[0]["title"] != "Best Before weekly digest: all clear" {
 		t.Errorf("send now: %v", titles(got))
+	}
+}
+
+// Accepted risks stay out of the digest until their expiry is near, and
+// their section can be turned off.
+func TestDigestAcceptedRisks(t *testing.T) {
+	at := newAlertTest(t)
+	at.report(1, kevInImage, highOnHost, criticalOnHost)
+	since := at.now.Add(-7 * 24 * time.Hour)
+	at.store.AcceptRisk(at.ctx, at.agent.ID, testImage, kevInImage.Vulnerability, "x", "", at.now, at.now.Add(30*24*time.Hour))
+	at.store.AcceptRisk(at.ctx, at.agent.ID, vulns.TargetHost, highOnHost.Vulnerability, "x", "", since.Add(-30*24*time.Hour), since)
+	at.store.AcceptRisk(at.ctx, at.agent.ID, vulns.TargetHost, criticalOnHost.Vulnerability, "x", "", at.now, at.now.Add(7*24*time.Hour))
+	s, _ := at.store.AlertSettings(at.ctx)
+
+	d, err := at.al.buildDigest(at.ctx, s, since, at.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// libc6 is accepted for a month: nowhere. curl's acceptance expired
+	// before the last digest: new again, but not expiring. openssl expires
+	// in exactly a week.
+	if len(d.Emergencies) != 0 || len(d.New) != 1 || len(d.New[0].Findings) != 1 || !strings.Contains(d.New[0].Findings[0].Line, "CVE-2026-3000") ||
+		len(d.Accepted) != 1 || len(d.Accepted[0].Findings) != 1 || !strings.Contains(d.Accepted[0].Findings[0].Line, "CVE-2026-2000") {
+		t.Errorf("digest: %+v", d)
+	}
+
+	s.DigestAccepted = false
+	if d, _ := at.al.buildDigest(at.ctx, s, since, at.now); len(d.Accepted) != 0 {
+		t.Errorf("section off: %+v", d.Accepted)
 	}
 }
 
