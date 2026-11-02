@@ -199,8 +199,9 @@ once, and again when it reports.
 
 The **weekly digest** is sent on Monday at 08:00 UTC by default. It lists, in
 this order: emergencies still open, stale servers, APT security updates
-waiting on each server, and vulnerabilities with a fix (medium or worse)
-found since the previous digest. With nothing to list, it says all is clear,
+waiting on each server, vulnerabilities with a fix (medium or worse)
+found since the previous digest, and accepted risks that have expired since
+then or expire within a week. With nothing to list, it says all is clear,
 so you know the dashboard is alive. Emails include HTML and plain text
 versions.
 
@@ -238,6 +239,31 @@ A few things to know:
   someone with the whole data directory can. If `identity.key` is replaced,
   enter them again.
 - Set `public_url` for notifications to link to the dashboard.
+
+## Accepted risks and your threshold
+
+Some vulnerabilities do not matter on your servers: the vulnerable feature is
+off, or the service is only reachable over your VPN. Click **Accept** next to
+one on a server's page, say why, and choose until when (90 days by default, a
+year at most). Until then, it:
+
+- does not count towards the server's status;
+- raises no emergency, and closes one already open;
+- is left out of the digest, until its expiry is a week away.
+
+It stays listed under **Accepted risks** on the server's page, with the
+reason, who accepted it and until when, and can be changed or withdrawn there.
+On expiry it counts again: if it is an emergency, it is sent at once, and the
+next digest lists it. An acceptance covers one vulnerability on one server's
+host, or on one of its images: in every package affected there, but nowhere
+else. When the image is updated, it is a new image, and is checked afresh.
+
+Under **Settings › Your pages**, each user chooses the lowest severity their
+pages show (low by default). Less severe vulnerabilities are still checked and
+listed under **Below your threshold** on each server's page, but do not count
+towards its status. Vulnerabilities known to be exploited, and those of
+unknown severity, are always shown. This only changes what you see:
+emergencies and the digest follow **What is worth sending**.
 
 ## Backups
 
