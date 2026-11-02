@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en-GB">
+<head><meta charset="utf-8"><title>Best Before weekly digest</title></head>
+<body>
+<h1>Best Before weekly digest</h1>
+<p>{{date .Since}} to {{date .Until}}.{{with .DashboardURL}} <a href="{{.}}">Open the dashboard</a>.{{end}}</p>
+{{if .AllClear}}
+<p>All clear: nothing to report. Everything is still fresh.</p>
+{{end}}
+{{with .Emergencies}}
+<h2>Emergencies still open</h2>
+<p>With a fix available, and {{$.EmergencyRule}}.</p>
+{{template "servers" .}}
+{{end}}
+{{with .Stale}}
+<h2>Stale servers</h2>
+<p>No report for too long: their vulnerabilities are unknown.</p>
+<ul>
+{{range .}}<li>{{template "server" .}}, {{if .LastReportAt}}last report {{date .LastReportAt}}{{else}}never reported{{end}}</li>
+{{end}}</ul>
+{{end}}
+{{with .Updates}}
+<h2>Security updates</h2>
+{{range .}}
+<h3>{{template "server" .}}{{if .RebootRequired}} (reboot required){{end}}</h3>
+<ul>
+{{range .Packages}}<li>{{.}}</li>
+{{end}}</ul>
+{{end}}
+{{end}}
+{{with .New}}
+<h2>New vulnerabilities with a fix</h2>
+<p>Severity {{$.MinSeverity}} or worse, found or given a fix since the last digest.</p>
+{{template "servers" .}}
+{{end}}
+<p>Vulnerabilities without a fix are not listed: they are on each server's page.</p>
+</body>
+</html>
+{{define "server"}}{{if .URL}}<a href="{{.URL}}">{{.Hostname}}</a>{{else}}{{.Hostname}}{{end}}{{end}}
+{{define "servers"}}
+{{range .}}
+<h3>{{template "server" .}}</h3>
+<ul>
+{{range .Findings}}<li>{{if .URL}}<a href="{{.URL}}">{{.Line}}</a>{{else}}{{.Line}}{{end}}</li>
+{{end}}</ul>
+{{end}}
+{{end}}

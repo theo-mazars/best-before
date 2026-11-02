@@ -9,6 +9,7 @@ package protocol
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/hkdf"
 	"crypto/hpke"
 	"crypto/rand"
 	"crypto/sha256"
@@ -28,6 +29,7 @@ const (
 	dashboardPublicKeyTag  = "bestbefore-dashboard-public-v1"
 	dashboardPrivateKeyTag = "bestbefore-dashboard-private-v1"
 	agentPrivateKeyTag     = "bestbefore-agent-private-v1"
+	secretsKeyInfo         = "bestbefore-dashboard-secrets-v1"
 )
 
 type DashboardKey struct {
@@ -68,6 +70,17 @@ func ParseDashboardKey(data []byte) (*DashboardKey, error) {
 		return nil, fmt.Errorf("dashboard key: %w", err)
 	}
 	return &DashboardKey{sign: ed25519.NewKeyFromSeed(parts[0]), kem: k}, nil
+}
+
+// SecretsKey derives the symmetric key that encrypts the secrets the
+// dashboard stores in its database, such as an SMTP password. It is only as
+// safe as identity.key: it keeps them out of a copy of the database alone.
+func (k *DashboardKey) SecretsKey() [32]byte {
+	b, err := hkdf.Key(sha256.New, k.sign.Seed(), nil, secretsKeyInfo, 32)
+	if err != nil {
+		panic(err) // only for a length HKDF-SHA256 cannot produce
+	}
+	return [32]byte(b)
 }
 
 func (k *DashboardKey) Public() *DashboardPublicKey {

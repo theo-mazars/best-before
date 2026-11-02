@@ -53,6 +53,7 @@ func newEmptyTestWeb(t *testing.T, publicURL string) *testWeb {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tw.w.alerts = newAlerter(st, tw.w.sealer, cfg, tw.w.log, clock)
 	tw.w.routes(tw.mux)
 
 	tw.secret, _ = auth.NewTOTPSecret()

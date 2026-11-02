@@ -38,6 +38,8 @@ type matching struct {
 	store *store.Store
 	log   *slog.Logger
 	now   func() time.Time
+	// matched, if set, is called after an agent's findings change.
+	matched func()
 
 	mu      sync.Mutex
 	pending map[string]bool
@@ -126,6 +128,10 @@ func (m *matching) match(ctx context.Context, agentID string) {
 	}
 	if err := m.store.ReplaceFindings(ctx, agentID, rep.Sequence, status.Built, findings, res.Unchecked, m.now()); err != nil {
 		m.log.Error("storing findings", "agent", agentID, "error", err)
+		return
+	}
+	if m.matched != nil {
+		m.matched()
 	}
 }
 

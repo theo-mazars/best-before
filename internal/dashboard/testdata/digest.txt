@@ -1,0 +1,25 @@
+Best Before weekly digest, 26 Oct 2026, 10:00 UTC to 2 Nov 2026, 10:00 UTC.
+
+EMERGENCIES STILL OPEN
+With a fix available, and known exploited, or CVSS 9.0 or more.
+
+web-01 <https://dashboard.example.vpn/servers/web-01-id>
+- CVE-2026-1000 in libc6 2.36-9 (image node:22-slim): known exploited, high, CVSS 7.8, fixed in 2.36-9+deb12u7
+
+STALE SERVERS
+No report for too long: their vulnerabilities are unknown.
+
+- db-<01>, never reported <https://dashboard.example.vpn/servers/db-01-id>
+
+SECURITY UPDATES
+
+web-01 <https://dashboard.example.vpn/servers/web-01-id>
+- openssl 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6
+
+NEW VULNERABILITIES WITH A FIX
+Severity medium or worse, found or given a fix since the last digest.
+
+web-01 <https://dashboard.example.vpn/servers/web-01-id>
+- CVE-2026-3000 in curl 8.5.0-2ubuntu10.5 (host): high, CVSS 7.5, fixed in 8.5.0-2ubuntu10.6
+
+Vulnerabilities without a fix are not listed: they are on each server's page.

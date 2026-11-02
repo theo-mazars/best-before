@@ -48,6 +48,8 @@ type web struct {
 	loginEmail *rateLimiter
 	pages      map[string]*template.Template
 	setup      setup
+	sealer     *sealer
+	alerts     *alerter
 }
 
 func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protocol.DashboardKey, cfg Config, trust *proxies, log *slog.Logger, now func() time.Time) (*web, error) {
@@ -62,9 +64,10 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		loginIP:    newRateLimiter(10, 30*time.Second, now),
 		loginEmail: newRateLimiter(5, 5*time.Minute, now),
 		pages:      map[string]*template.Template{},
+		sealer:     newSealer(key),
 	}
 	funcs := template.FuncMap{"date": formatDate, "join": strings.Join, "duration": formatDuration}
-	for _, page := range []string{"login", "setup", "agents", "code", "error", "overview", "server"} {
+	for _, page := range []string{"login", "setup", "agents", "code", "error", "overview", "server", "settings", "channel"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -90,6 +93,15 @@ func (w *web) routes(mux *http.ServeMux) {
 	mux.Handle("GET /agents", page(w.admin(w.agentsPage)))
 	mux.Handle("POST /agents/codes", page(w.admin(w.createCode)))
 	mux.Handle("POST /agents/{id}/revoke", page(w.admin(w.revoke)))
+	mux.Handle("GET /settings", page(w.admin(w.settingsPage)))
+	mux.Handle("POST /settings/alerts", page(w.admin(w.saveAlertSettings)))
+	mux.Handle("POST /settings/digest", page(w.admin(w.sendDigest)))
+	mux.Handle("GET /settings/channels/new", page(w.admin(w.newChannelPage)))
+	mux.Handle("POST /settings/channels", page(w.admin(w.createChannel)))
+	mux.Handle("GET /settings/channels/{id}", page(w.admin(w.channelPage)))
+	mux.Handle("POST /settings/channels/{id}", page(w.admin(w.updateChannel)))
+	mux.Handle("POST /settings/channels/{id}/delete", page(w.admin(w.deleteChannel)))
+	mux.Handle("POST /settings/channels/{id}/test", page(w.admin(w.testChannel)))
 }
 
 func (w *web) headers(h http.Handler) http.Handler {
