@@ -3,6 +3,7 @@ package dashboard
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"sort"
@@ -185,11 +186,23 @@ type imageView struct {
 	Containers []string
 	OS         string
 	NotChecked string
-	Software   []string // e.g. "node 22.11.0"
-	GoPrograms []string // e.g. "/usr/local/bin/traefik (go1.23.4)"
-	Findings   []store.Finding
-	NoFixYet   int
+	// Checked says what matching covers, e.g. "142 Debian GNU/Linux 12
+	// (bookworm) packages (dpkg)" or "node 22.11.0 (by version)". Empty when
+	// the image has nothing Best Before can check, which must not pass for
+	// clean.
+	Checked []string
+	// Imprecise are known runtimes whose version is too vague to match,
+	// e.g. "redis 7".
+	Imprecise []string
+	Findings  []store.Finding
+	NoFixYet  int
 }
+
+// NothingChecked is true for an image that was read, but holds no package
+// records and no known runtime, e.g. a static binary FROM scratch. What
+// such an image contains is its developers' responsibility, so it is shown,
+// but does not change the server's status.
+func (v *imageView) NothingChecked() bool { return v.NotChecked == "" && len(v.Checked) == 0 }
 
 type unfixedView struct {
 	Where string
@@ -233,26 +246,18 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 				if v.OS == "" {
 					v.OS = strings.TrimSpace(img.System.OS.ID + " " + img.System.OS.VersionID)
 				}
+				// Any reason not to check concerns the packages.
+				if m := img.System.PackageManager; m != "" && v.NotChecked == "" {
+					v.Checked = append(v.Checked, strings.Join(strings.Fields(fmt.Sprintf("%d %s packages (%s)", len(img.System.Packages), v.OS, m)), " "))
+				}
 			} else if v.NotChecked == "" {
 				v.NotChecked = "not read"
 			}
-			if img.System != nil {
-				for _, p := range img.System.GoPrograms {
-					built := p.GoVersion
-					if built == "" {
-						built = "built before Go 1.18"
-					}
-					if vulns.IgnoredGoProgram(p.Path) {
-						built += ", not checked by choice"
-					}
-					v.GoPrograms = append(v.GoPrograms, p.Path+" ("+built+")")
-				}
+			software, imprecise := vulns.Software(img.Versions)
+			for _, sw := range software {
+				v.Checked = append(v.Checked, sw+" (by version)")
 			}
-			for _, vv := range img.Versions {
-				if sw, ok := vulns.SoftwareName(vv.Name); ok {
-					v.Software = append(v.Software, sw+" "+vv.Value)
-				}
-			}
+			v.Imprecise = imprecise
 			images[img.ID] = v
 			order = append(order, v)
 		}

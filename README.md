@@ -2,16 +2,15 @@
 
 > Know what's gone off on your servers.
 
-**Best Before** is a read-only, self-hosted security monitor for small Ubuntu + Docker fleets. It answers three questions in one dashboard:
+**Best Before** is a read-only, self-hosted security monitor for small Ubuntu + Docker fleets. It answers two questions in one dashboard:
 
 1. Which host packages (APT) need updating, and which of those are security fixes?
-2. Which running Docker images contain known vulnerabilities (CVEs) in their operating system, their runtimes (Node, Python, Java…) or the Go programs they ship?
-3. Which running images are out of date: a newer tag exists, or the image ships an end-of-life runtime?
+2. Which running Docker images contain packages with known vulnerabilities (CVEs): in their operating system, or in the runtimes they install outside the package manager (Node, Python, Java…)?
 
 You get a weekly digest, and an immediate alert when something urgent appears.
 
 > [!WARNING]
-> Best Before is at an early stage. Agents report their host and images, and the dashboard finds their known vulnerabilities. Checks for outdated images and end-of-life runtimes, alerts and digests are still to come.
+> Best Before is at an early stage. Agents report their host and images, and the dashboard finds their known vulnerabilities. Alerts and digests are still to come.
 
 ## How it works
 
@@ -25,7 +24,7 @@ You get a weekly digest, and an immediate alert when something urgent appears.
 - **`bestbefore-agent`** runs on each server from a systemd timer, collects an inventory, sends one report and exits. It never listens on the network and never changes anything on the server.
 - **`bestbefore`** is the dashboard, a container with an embedded web UI and a single SQLite file. It checks reports against the [Grype](https://github.com/anchore/grype) vulnerability database, which it downloads and keeps current, and counts only vulnerabilities that have a fix.
 
-Best Before watches the system, not your applications' dependencies (npm, pip, Go modules…): tools such as Dependabot already cover those in your repositories.
+Best Before watches the system, not your applications: the programs inside an image and their dependencies (npm, pip, Go modules…) are their developers' responsibility, and tools such as Dependabot already cover them in their repositories.
 
 **Run the dashboard on a VPN or private network only. Never expose it to the internet.** It holds a complete map of every vulnerable package on every server.
 

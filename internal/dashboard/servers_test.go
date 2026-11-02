@@ -121,7 +121,7 @@ func TestOverviewAndServerPage(t *testing.T) {
 		t.Fatalf("server page: HTTP %d\n%s", rec.Code, page)
 	}
 	for _, want := range []string{
-		"Ubuntu 24.04.3 LTS", "node:22-slim", "Software checked by version: node 22.0.0",
+		"Ubuntu 24.04.3 LTS", "node:22-slim", "Checked: 0 Debian GNU/Linux 12 (bookworm) packages (dpkg); node 22.0.0 (by version)",
 		"22.4.1", "(by version)", "No fix yet (1)", "CVE-2026-0003", "&lt;img src=x onerror=alert(1)&gt;",
 	} {
 		if !strings.Contains(page, want) {
@@ -205,5 +205,53 @@ func TestUncheckedImageNeedsAttention(t *testing.T) {
 	page := tw.do(http.MethodGet, "/servers/"+a.ID, nil, admin).Body.String()
 	if !strings.Contains(page, "not checked: the vulnerability database has no security data for opensuse-leap 15.6") {
 		t.Errorf("server page:\n%s", page)
+	}
+}
+
+// Each image says what was checked, so that an image with nothing Best
+// Before can read never passes for clean.
+func TestWhatWasChecked(t *testing.T) {
+	tw := newTestWeb(t, "")
+	ctx := context.Background()
+	tw.store.CreateEnrolmentCode(ctx, [32]byte{1}, "", tw.now, tw.now.Add(time.Hour))
+	key, _ := protocol.GenerateAgentKey()
+	a, _ := tw.store.RedeemEnrolmentCode(ctx, [32]byte{1}, store.NewAgent{PublicKey: key.Public(), Hostname: "web-01"}, tw.now)
+
+	const (
+		static = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+		leap   = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+	)
+	r := testServerReport()
+	r.Docker.Containers = append(r.Docker.Containers,
+		report.Container{ID: "c2", Name: "proxy", Image: "example/static:1", ImageID: static},
+		report.Container{ID: "c3", Name: "legacy", Image: "example/leap:1", ImageID: leap})
+	r.Docker.Images[0].Versions = append(r.Docker.Images[0].Versions, report.VersionVariable{Name: "REDIS_VERSION", Value: "7"})
+	r.Docker.Images = append(r.Docker.Images,
+		report.Image{ID: static, System: &report.ImageSystem{Packages: []report.InstalledPackage{}}},
+		report.Image{ID: leap, System: &report.ImageSystem{
+			OS: report.OS{ID: "opensuse-leap", Name: "openSUSE Leap 15.6"}, PackageManager: "rpm",
+			Packages: []report.InstalledPackage{{Name: "bash", Version: "4.4"}}}})
+	body, _ := json.Marshal(r)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	db := fakeDB{unchecked: map[string]string{leap: "the vulnerability database has no security data for opensuse-leap 15.6"}}
+	newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now }).match(ctx, a.ID)
+
+	page := tw.do(http.MethodGet, "/servers/"+a.ID, nil, tw.session("admin@example.org")).Body.String()
+	for _, want := range []string{
+		"Checked: 0 Debian GNU/Linux 12 (bookworm) packages (dpkg); node 22.0.0 (by version)",
+		"Not checked, as the image does not give a precise version: redis 7",
+		"example/static:1:\n\t\t0 with a fix, 0 without, nothing to check",
+		"Checked: nothing. The image has no package records",
+		// The packages of a distribution without security data are not
+		// claimed as checked.
+		"not checked: the vulnerability database has no security data for opensuse-leap 15.6",
+		"Checked: nothing</li>",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("server page lacks %q:\n%s", want, page)
+		}
+	}
+	if strings.Contains(page, "openSUSE Leap 15.6 packages") {
+		t.Error("packages without security data shown as checked")
 	}
 }

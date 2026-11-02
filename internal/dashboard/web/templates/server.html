@@ -37,13 +37,13 @@ Last report: {{date .Server.LastReportAt}}.
 {{range $.Images}}
 <details{{if .Findings}} open{{end}}>
 	<summary>{{if .References}}{{join .References ", "}}{{else}}{{.ID}}{{end}}:
-		{{len .Findings}} with a fix, {{.NoFixYet}} without{{with .NotChecked}}, <strong>not checked: {{.}}</strong>{{end}}</summary>
+		{{len .Findings}} with a fix, {{.NoFixYet}} without{{with .NotChecked}}, <strong>not checked: {{.}}</strong>{{end}}{{if .NothingChecked}}, nothing to check{{end}}</summary>
 	<ul>
 		<li>Containers: {{join .Containers ", "}}</li>
 		<li>Image ID: <code>{{.ID}}</code></li>
 		{{with .OS}}<li>System: {{.}}</li>{{end}}
-		{{with .Software}}<li>Software checked by version: {{join . ", "}}</li>{{end}}
-		{{with .GoPrograms}}<li>Go programs, checked by the Go version that built them: {{join . ", "}}</li>{{end}}
+		<li>Checked: {{if .Checked}}{{join .Checked "; "}}{{else if .NothingChecked}}nothing. The image has no package records Best Before can read and no known runtime; what it contains is up to its developers.{{else}}nothing{{end}}</li>
+		{{with .Imprecise}}<li>Not checked, as the image does not give a precise version: {{join . ", "}}</li>{{end}}
 	</ul>
 	{{template "findings" .Findings}}
 </details>

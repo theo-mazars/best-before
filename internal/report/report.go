@@ -7,7 +7,7 @@ package report
 import "time"
 
 // SchemaVersion is the version of the report format defined in this package.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 // Report is one collection run on one server.
 type Report struct {
@@ -157,15 +157,4 @@ type ImageSystem struct {
 	// binary), in which case Packages is empty.
 	PackageManager string             `json:"package_manager"`
 	Packages       []InstalledPackage `json:"packages"`
-	// GoPrograms are the image's Go executables, which carry a copy of the
-	// Go standard library of the version that built them.
-	GoPrograms []GoProgram `json:"go_programs"`
-}
-
-// GoProgram is one Go executable inside an image.
-type GoProgram struct {
-	Path string `json:"path"`
-	// GoVersion is the Go release that built it, e.g. "go1.23.4"; empty for
-	// programs built before Go 1.18, whose version the agent does not read.
-	GoVersion string `json:"go_version"`
 }
