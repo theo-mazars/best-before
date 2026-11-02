@@ -10,6 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -19,14 +20,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Check formatting
-        run: test -z "$(gofmt -l .)"
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -race ./...
+      - name: Check
+        run: make check
 
       - name: Build
         run: make build
