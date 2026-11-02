@@ -2,6 +2,8 @@ package vulns
 
 import (
 	"regexp"
+
+	"github.com/theo-mazars/best-before/internal/report"
 )
 
 // software is something images install without their package manager and
@@ -20,7 +22,7 @@ var knownSoftware = []software{
 	{"PYTHON_VERSION", "python", []string{"python:python"}},
 	{"PHP_VERSION", "php", []string{"php:php"}},
 	{"RUBY_VERSION", "ruby", []string{"ruby-lang:ruby"}},
-	// Checked like the Go programs in images, against Go's own data.
+	// Checked against Go's own vulnerability data rather than by CPE.
 	{"GOLANG_VERSION", "go", nil},
 	{"JAVA_VERSION", "java", []string{"oracle:openjdk"}},
 	{"REDIS_VERSION", "redis", []string{"redis:redis"}},
@@ -50,6 +52,24 @@ var softwareByVariable = func() map[string]software {
 func SoftwareName(variable string) (string, bool) {
 	s, ok := softwareByVariable[variable]
 	return s.name, ok
+}
+
+// Software sorts the *_VERSION variables the dashboard recognises into
+// those it matches, e.g. "node 22.11.0", and those whose value is not a
+// precise enough version to match, e.g. "redis 7".
+func Software(vars []report.VersionVariable) (checked, imprecise []string) {
+	for _, v := range vars {
+		s, ok := softwareByVariable[v.Name]
+		if !ok {
+			continue
+		}
+		if _, ok := softwareVersion(v.Value); ok {
+			checked = append(checked, s.name+" "+v.Value)
+		} else {
+			imprecise = append(imprecise, s.name+" "+v.Value)
+		}
+	}
+	return checked, imprecise
 }
 
 var dottedVersion = regexp.MustCompile(`\d+(?:\.\d+)+`)

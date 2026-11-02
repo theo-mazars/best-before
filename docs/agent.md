@@ -70,12 +70,9 @@ prints the full report as JSON and sends nothing:
   Also each image's environment variables named `*_VERSION`, such as
   `NODE_VERSION=22.23.4`: official images set them for software installed
   without the package manager (Node, Python, PHP, Java, Redis, PostgreSQL…).
-  No other environment variable is read, as they may hold secrets.
-  And the Go programs in each image, with the Go version that built them:
-  Go copies its standard library into every program, so Traefik, Caddy or
-  `gosu` are only as safe as that version. The agent recognises Go programs by
-  the build information Go embeds in them, and reports only their path and Go
-  version, never their dependencies.
+  No other environment variable is read, as they may hold secrets. The
+  programs inside an image are not analysed: they are their developers'
+  responsibility.
 
 Anything the agent could not collect is listed in the report, so a gap is
 never mistaken for a clean server. Servers without Docker simply have no Docker

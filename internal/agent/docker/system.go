@@ -117,29 +117,14 @@ type layer struct {
 	files   map[string][]byte // a nil value replaces the file with something else
 	deleted []string          // whiteouts: paths removed from lower layers
 	opaque  []string          // directories whose lower contents are hidden
-	// programs are the layer's executables: a Go version ("" before Go
-	// 1.18), or nil for one that is not a Go program and replaces any lower
-	// one. A Go program replaced by something other than an executable is
-	// still listed; that is rare, and errs on the side of a check too many.
-	programs map[string]*string
 }
-
-// contents is what the agent keeps from an image.
-type contents struct {
-	files    map[string][]byte
-	programs map[string]string // path to Go version
-}
-
-// maxGoPrograms bounds what a crafted image can add to a report; real images
-// have a handful.
-const maxGoPrograms = 1000
 
 var (
 	gzipMagic = []byte{0x1f, 0x8b}
 	zstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
 )
 
-func readExport(r io.Reader, want platform) (*contents, error) {
+func readExport(r io.Reader, want platform) (map[string][]byte, error) {
 	e := &export{
 		files:       map[string]bool{},
 		links:       map[string]string{},
@@ -212,7 +197,7 @@ func isTar(head []byte) bool {
 }
 
 func (e *export) readLayer(tr *tar.Reader) (*layer, error) {
-	l := &layer{files: map[string][]byte{}, programs: map[string]*string{}}
+	l := &layer{files: map[string][]byte{}}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -232,9 +217,6 @@ func (e *export) readLayer(tr *tar.Reader) (*layer, error) {
 		case strings.HasPrefix(base, ".wh."):
 			l.deleted = append(l.deleted, path.Join(dir, strings.TrimPrefix(base, ".wh.")))
 		case !wanted(p):
-			if err := l.scanProgram(p, h, tr); err != nil {
-				return nil, fmt.Errorf("/%s: %w", p, err)
-			}
 		case h.Typeflag == tar.TypeReg && sqliteWAL(p):
 			if h.Size > 0 {
 				l.files[p] = []byte{} // present and not empty; never read
@@ -268,38 +250,9 @@ func (e *export) readLayer(tr *tar.Reader) (*layer, error) {
 	}
 }
 
-// scanProgram records the Go version of an executable, if it is a Go
-// program.
-func (l *layer) scanProgram(p string, h *tar.Header, r io.Reader) error {
-	switch {
-	case h.Typeflag == tar.TypeLink:
-		if v, ok := l.programs[cleanPath(h.Linkname)]; ok {
-			l.programs[p] = v
-		}
-		return nil
-	case h.Typeflag != tar.TypeReg || h.Mode&0o111 == 0 || h.Size < 1024:
-		return nil
-	}
-	br := bufio.NewReaderSize(r, 4096)
-	if head, _ := br.Peek(4); !isELF(head) {
-		l.programs[p] = nil
-		return nil
-	}
-	v, err := goVersion(br)
-	switch {
-	case errors.Is(err, errNotGo):
-		l.programs[p] = nil
-	case err != nil:
-		return err
-	default:
-		l.programs[p] = &v
-	}
-	return nil
-}
-
 // assemble finds the image's layers and applies them in order, as Docker
 // does when it creates a container's filesystem.
-func (e *export) assemble(want platform) (*contents, error) {
+func (e *export) assemble(want platform) (map[string][]byte, error) {
 	raw, ok := e.small["manifest.json"]
 	if !ok {
 		return nil, errors.New("the export has no manifest.json")
@@ -338,7 +291,6 @@ func (e *export) assemble(want platform) (*contents, error) {
 	}
 
 	files := map[string][]byte{}
-	programs := map[string]string{}
 	for _, name := range manifests[complete[0]].Layers {
 		name = e.resolve(name)
 		if err := e.unsupported[name]; err != nil {
@@ -350,11 +302,9 @@ func (e *export) assemble(want platform) (*contents, error) {
 		}
 		for _, dir := range l.opaque {
 			removeUnder(files, dir, false)
-			removeUnder(programs, dir, false)
 		}
 		for _, p := range l.deleted {
 			removeUnder(files, p, true)
-			removeUnder(programs, p, true)
 		}
 		for p, data := range l.files {
 			if data == nil {
@@ -363,18 +313,8 @@ func (e *export) assemble(want platform) (*contents, error) {
 				files[p] = data
 			}
 		}
-		for p, v := range l.programs {
-			if v == nil {
-				delete(programs, p)
-			} else {
-				programs[p] = *v
-			}
-		}
 	}
-	if len(programs) > maxGoPrograms {
-		return nil, fmt.Errorf("the image has more than %d Go programs", maxGoPrograms)
-	}
-	return &contents{files: files, programs: programs}, nil
+	return files, nil
 }
 
 func (e *export) hasAll(layers []string) bool {
@@ -401,7 +341,7 @@ func (e *export) resolve(name string) string {
 }
 
 // removeUnder deletes the files below dir and, if self is set, dir itself.
-func removeUnder[V any](files map[string]V, dir string, self bool) {
+func removeUnder(files map[string][]byte, dir string, self bool) {
 	for p := range files {
 		if (self && p == dir) || strings.HasPrefix(p, dir+"/") || dir == "" {
 			delete(files, p)
@@ -415,13 +355,8 @@ func cleanPath(name string) string {
 	return strings.TrimPrefix(path.Clean("/"+name), "/")
 }
 
-func parseSystem(c *contents) (*report.ImageSystem, error) {
-	files := c.files
-	s := &report.ImageSystem{Packages: []report.InstalledPackage{}, GoPrograms: []report.GoProgram{}}
-	for p, v := range c.programs {
-		s.GoPrograms = append(s.GoPrograms, report.GoProgram{Path: "/" + p, GoVersion: v})
-	}
-	sort.Slice(s.GoPrograms, func(i, j int) bool { return s.GoPrograms[i].Path < s.GoPrograms[j].Path })
+func parseSystem(files map[string][]byte) (*report.ImageSystem, error) {
+	s := &report.ImageSystem{Packages: []report.InstalledPackage{}}
 
 	osRelease, ok := files[pathOSRelease]
 	if !ok {

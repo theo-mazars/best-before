@@ -19,6 +19,7 @@ import (
 	"github.com/theo-mazars/best-before/internal/dashboard"
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
 	"github.com/theo-mazars/best-before/internal/protocol"
+	"github.com/theo-mazars/best-before/internal/report"
 )
 
 // A real dashboard and the real agent, talking over the network.
@@ -151,7 +152,7 @@ func TestEndToEnd(t *testing.T) {
 	if len(agents) != 1 || agents[0].LastSequence != 2 {
 		t.Fatalf("agents: %+v", agents)
 	}
-	if body, err := e.store.LatestReport(ctx, agents[0].ID); err != nil || !bytes.Contains(body, []byte(`"schema_version":2`)) {
+	if body, err := e.store.LatestReport(ctx, agents[0].ID); err != nil || !bytes.Contains(body, []byte(fmt.Sprintf(`"schema_version":%d`, report.SchemaVersion))) {
 		t.Errorf("stored report: %s, %v", body, err)
 	}
 
