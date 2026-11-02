@@ -25,6 +25,8 @@ Usage:
   bestbefore-agent --dry-run            print the report instead of sending it
   bestbefore-agent enrol CODE           enrol this server with the code from the dashboard
   bestbefore-agent configure docker X   change Docker access: tcp://host:port, off or auto
+  bestbefore-agent configure dashboard URL
+                                        use a new address of the same dashboard
   bestbefore-agent config example       print a commented configuration file
   bestbefore-agent --version
 
@@ -36,6 +38,7 @@ Options:
 Enrolment options:
   --docker setting     tcp://host:port (socket proxy), off or auto; asked if omitted
   --ca-file path       certificate authority of a reverse proxy using a private CA
+                       (also with configure dashboard)
   --force              enrol again, with a new key
 `
 
@@ -49,8 +52,8 @@ func main() {
 	switch {
 	case len(args) > 0 && args[0] == "enrol":
 		command, args = "enrol", args[1:]
-	case len(args) > 1 && args[0] == "configure" && args[1] == "docker":
-		command, args = "configure docker", args[2:]
+	case len(args) > 1 && args[0] == "configure" && (args[1] == "docker" || args[1] == "dashboard"):
+		command, args = "configure "+args[1], args[2:]
 	}
 
 	fs := flag.NewFlagSet("bestbefore-agent", flag.ExitOnError)
@@ -89,6 +92,10 @@ func main() {
 	case command == "configure docker" && len(positional) == 1:
 		if err = agent.SetDocker(*configPath, positional[0]); err == nil {
 			fmt.Printf("Docker access set to %s. It applies from the next report.\n", positional[0])
+		}
+	case command == "configure dashboard" && len(positional) == 1:
+		if err = agent.MoveDashboard(ctx, *configPath, positional[0], *caFile, os.Stdout); err == nil {
+			fmt.Printf("Reports now go to %s.\n", positional[0])
 		}
 	case command == "" && len(positional) == 0:
 		err = agent.Run(ctx, agent.Options{

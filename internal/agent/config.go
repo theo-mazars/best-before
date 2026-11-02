@@ -51,7 +51,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: not enrolled; run bestbefore-agent enrol with a code from the dashboard", path)
 	}
 	if u, err := url.Parse(c.DashboardURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return nil, fmt.Errorf("%s: dashboard_url must be an https:// URL", path)
+		return nil, fmt.Errorf("%s: dashboard_url must be an https:// URL (or http:// for testing)", path)
 	}
 	if c.DashboardKey, err = protocol.ParseDashboardPublicKey([]byte(v.Get("dashboard_key", ""))); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

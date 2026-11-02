@@ -80,6 +80,10 @@ public_url = https://dashboard.example.vpn:8443
 data_dir = /var/lib/bestbefore
 ```
 
+Agents keep the address they enrolled with. If `public_url` changes later,
+tell each server, as described in
+[the agent's documentation](agent.md#when-the-dashboard-moves).
+
 ## Starting it
 
 ```sh

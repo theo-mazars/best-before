@@ -43,11 +43,9 @@ func Enrol(ctx context.Context, o EnrolOptions) error {
 	if st.enrolled() && !o.Force {
 		return errors.New("this server is already enrolled; use --force to enrol it again, then revoke the old agent in the dashboard")
 	}
-	if strings.HasPrefix(code.URL, "http://") {
-		fmt.Fprintln(o.Out, "Warning: the dashboard uses plain HTTP. Reports stay encrypted and signed, but which servers report, and when, is visible on the network. Use this for testing only.")
-	}
+	warnPlainHTTP(o.Out, code.URL)
 
-	dashboard, tlsConfig, pinnedTLSKey, err := discover(ctx, code, o.CAFile)
+	dashboard, tlsConfig, pinnedTLSKey, err := discover(ctx, code.URL, code.Fingerprint, o.CAFile)
 	if err != nil {
 		return err
 	}
@@ -89,10 +87,42 @@ func Enrol(ctx context.Context, o EnrolOptions) error {
 	return nil
 }
 
-// discover fetches the dashboard's identity and checks it against the code.
-// It returns the TLS configuration to use from now on, and the TLS key to pin
-// if the dashboard vouches for its own self-signed certificate.
-func discover(ctx context.Context, code *protocol.EnrolmentCode, caFile string) (*protocol.DashboardPublicKey, *tls.Config, []byte, error) {
+// MoveDashboard points an enrolled agent at a new address of the same
+// dashboard, for instance after it moved host or behind a reverse proxy. The
+// dashboard there must prove it holds the identity pinned at enrolment, and
+// its TLS is checked and pinned again as at enrolment.
+func MoveDashboard(ctx context.Context, configPath, dashboardURL, caFile string, out io.Writer) error {
+	if err := protocol.CheckDashboardURL(dashboardURL); err != nil {
+		return err
+	}
+	c, err := LoadConfig(configPath)
+	if err != nil {
+		return err
+	}
+	if caFile == "" {
+		caFile = c.CAFile
+	}
+	warnPlainHTTP(out, dashboardURL)
+
+	_, _, pinnedTLSKey, err := discover(ctx, dashboardURL, c.DashboardKey.Fingerprint(), caFile)
+	if err != nil {
+		return fmt.Errorf("dashboard address not changed: %w", err)
+	}
+	c.DashboardURL, c.DashboardTLSKey, c.CAFile = dashboardURL, pinnedTLSKey, caFile
+	return c.write(configPath)
+}
+
+func warnPlainHTTP(out io.Writer, dashboardURL string) {
+	if strings.HasPrefix(dashboardURL, "http://") {
+		fmt.Fprintln(out, "Warning: the dashboard uses plain HTTP. Reports stay encrypted and signed, but which servers report, and when, is visible on the network. Use this for testing only.")
+	}
+}
+
+// discover fetches the dashboard's identity at dashboardURL and checks it
+// against the fingerprint. It returns the TLS configuration to use from now
+// on, and the TLS key to pin if the dashboard vouches for its own self-signed
+// certificate.
+func discover(ctx context.Context, dashboardURL string, fingerprint [32]byte, caFile string) (*protocol.DashboardPublicKey, *tls.Config, []byte, error) {
 	// The certificate is only recorded here; it is judged once the identity
 	// document says which key to expect. Nothing secret is sent before then.
 	var peer []*x509.Certificate
@@ -109,7 +139,7 @@ func discover(ctx context.Context, code *protocol.EnrolmentCode, caFile string) 
 		Transport:     &http.Transport{Proxy: nil, TLSClientConfig: probe},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(code.URL, "/")+"/api/v1/identity", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(dashboardURL, "/")+"/api/v1/identity", nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -122,12 +152,12 @@ func discover(ctx context.Context, code *protocol.EnrolmentCode, caFile string) 
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	dashboard, statedTLSKey, err := protocol.VerifyIdentity(body, code.Fingerprint)
+	dashboard, statedTLSKey, err := protocol.VerifyIdentity(body, fingerprint)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	if strings.HasPrefix(code.URL, "http://") {
+	if strings.HasPrefix(dashboardURL, "http://") {
 		return dashboard, nil, nil, nil
 	}
 	if len(peer) == 0 {
@@ -142,7 +172,7 @@ func discover(ctx context.Context, code *protocol.EnrolmentCode, caFile string) 
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	u, _ := url.Parse(code.URL)
+	u, _ := url.Parse(dashboardURL)
 	intermediates := x509.NewCertPool()
 	for _, c := range peer[1:] {
 		intermediates.AddCert(c)

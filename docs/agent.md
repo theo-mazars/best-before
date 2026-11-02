@@ -143,6 +143,21 @@ boot if the server was off.
 | `/var/lib/bestbefore-agent/agent.key` | The agent's private key. It never leaves the server. |
 | `/var/lib/bestbefore-agent/sequence` | The number of the last report, against replays. |
 
+## When the dashboard moves
+
+If the dashboard gets a new address, or moves behind a reverse proxy, change
+its `public_url`, then on each server:
+
+```sh
+sudo bestbefore-agent configure dashboard https://new-address.example.vpn
+```
+
+The agent accepts the new address only if the dashboard there proves it holds
+the identity pinned at enrolment, then checks and pins its TLS again, as at
+enrolment: add `--ca-file` for a reverse proxy using a private certificate
+authority. Until a server is updated, its reports fail, and the dashboard
+shows it as stale.
+
 ## Re-enrolling and removing
 
 To enrol a server again with a new key, revoke the old agent on the Agents

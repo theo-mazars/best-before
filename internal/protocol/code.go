@@ -22,7 +22,7 @@ type EnrolmentCode struct {
 }
 
 func NewEnrolmentCode(dashboardURL string, id *DashboardPublicKey) (*EnrolmentCode, error) {
-	if err := checkDashboardURL(dashboardURL); err != nil {
+	if err := CheckDashboardURL(dashboardURL); err != nil {
 		return nil, err
 	}
 	c := &EnrolmentCode{URL: dashboardURL, Fingerprint: id.Fingerprint()}
@@ -65,13 +65,14 @@ func ParseEnrolmentCode(s string) (*EnrolmentCode, error) {
 	c := &EnrolmentCode{URL: string(raw[64:])}
 	copy(c.Fingerprint[:], raw[:32])
 	copy(c.Secret[:], raw[32:64])
-	if err := checkDashboardURL(c.URL); err != nil {
+	if err := CheckDashboardURL(c.URL); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func checkDashboardURL(s string) error {
+// CheckDashboardURL accepts the addresses agents may report to.
+func CheckDashboardURL(s string) error {
 	if len(s) > 2048 {
 		return errors.New("dashboard URL is too long")
 	}

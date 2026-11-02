@@ -48,7 +48,7 @@ func VerifyIdentity(data []byte, fingerprint [32]byte) (*DashboardPublicKey, []b
 		return nil, nil, err
 	}
 	if pub.Fingerprint() != fingerprint {
-		return nil, nil, errors.New("this is not the dashboard the enrolment code was created by")
+		return nil, nil, errors.New("this is not the dashboard expected: its identity key is different")
 	}
 	if len(id.TLSKey) == 0 {
 		return pub, nil, nil
