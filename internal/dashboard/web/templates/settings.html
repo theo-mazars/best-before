@@ -37,7 +37,7 @@ Each is sent once per server, then again as a reminder while it stays open. A se
 </p>
 
 <h2>What is worth sending</h2>
-<p>Vulnerabilities without a fix are never sent: they are listed on each server's page until a fix appears.</p>
+<p>Vulnerabilities without a fix are never sent: they are listed on each server's page until a fix appears. Nor are accepted risks, until they expire.</p>
 <form method="post" action="/settings/alerts">
 	<h3>Emergencies</h3>
 	<p>A vulnerability with a fix is an emergency when:</p>
@@ -68,6 +68,7 @@ Each is sent once per server, then again as a reminder while it stays open. A se
 		<select name="digest_new_min_severity">
 			{{range .Severities}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
 		</select></label></p>
+	<p><label><input type="checkbox" name="digest_accepted"{{if .Settings.DigestAccepted}} checked{{end}}> accepted risks that expired since the last digest, or expire within a week</label></p>
 	<p><label><input type="checkbox" name="digest_all_clear"{{if .Settings.DigestAllClear}} checked{{end}}> with nothing to list, send it anyway to say all is clear</label>
 		<br><small>So you know the dashboard is alive.</small></p>
 	<p><button>Save</button></p>
@@ -81,4 +82,14 @@ Each is sent once per server, then again as a reminder while it stays open. A se
 {{else}}
 <p>No channel receives the digest.</p>
 {{end}}
+
+<h2>Your pages</h2>
+<form method="post" action="/settings/view">
+	<p><label>Show vulnerabilities of severity
+		<select name="min_severity">
+			{{range .ViewSeverities}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+		</select></label>
+		<button>Save</button></p>
+</form>
+<p>Less severe ones are still checked, and listed apart on each server's page; they do not count towards its status. Known exploited vulnerabilities, and those of unknown severity, are always shown. This only changes what you see: emergencies and the digest follow the settings above.</p>
 {{end}}

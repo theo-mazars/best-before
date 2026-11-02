@@ -46,5 +46,18 @@ Severity {{$.MinSeverity}} or worse, found or given a fix since the last digest.
 {{- end}}
 {{- end}}
 {{- end}}
+{{- with .Accepted}}
+
+ACCEPTED RISKS EXPIRING
+Expired since the last digest, or expiring within a week. Once expired, they count again.
+{{- range .}}
+
+{{.Hostname}}{{with .URL}} <{{.}}>{{end}}
+{{- range .Findings}}
+- {{.Line}}
+  {{.Note}}
+{{- end}}
+{{- end}}
+{{- end}}
 
 Vulnerabilities without a fix are not listed: they are on each server's page.

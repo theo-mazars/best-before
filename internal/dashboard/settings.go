@@ -16,10 +16,6 @@ import (
 
 var weekdays = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday, time.Sunday}
 
-// digestSeverities are the thresholds offered for new vulnerabilities in the
-// digest, most severe first.
-var digestSeverities = []string{"critical", "high", "medium", "low", "negligible"}
-
 // weekdayOption is an option of a select.
 type weekdayOption struct {
 	Value    string
@@ -60,9 +56,15 @@ func (w *web) renderSettings(rw http.ResponseWriter, r *http.Request, u *store.U
 			digests++
 		}
 	}
-	severities := []weekdayOption{{Value: "", Label: "none: leave this section out", Selected: s.DigestNewMinSeverity == ""}}
-	for _, sev := range digestSeverities {
-		severities = append(severities, weekdayOption{Value: sev, Label: sev + " or worse", Selected: s.DigestNewMinSeverity == sev})
+	digestSeverities := []weekdayOption{{Value: "", Label: "none: leave this section out", Selected: s.DigestNewMinSeverity == ""}}
+	var viewSeverities []weekdayOption
+	for _, sev := range severities {
+		digestSeverities = append(digestSeverities, weekdayOption{Value: sev, Label: sev + " or worse", Selected: s.DigestNewMinSeverity == sev})
+		label := sev + " or worse"
+		if sev == "negligible" {
+			label = "everything"
+		}
+		viewSeverities = append(viewSeverities, weekdayOption{Value: sev, Label: label, Selected: u.MinSeverity == sev})
 	}
 	cvss := ""
 	if s.EmergencyMinCVSS != nil {
@@ -73,7 +75,8 @@ func (w *web) renderSettings(rw http.ResponseWriter, r *http.Request, u *store.U
 		"Settings":          s,
 		"EmergencyRule":     emergencyRule(s),
 		"EmergencyCVSS":     cvss,
-		"Severities":        severities,
+		"Severities":        digestSeverities,
+		"ViewSeverities":    viewSeverities,
 		"Weekdays":          days,
 		"DigestTime":        fmt.Sprintf("%02d:%02d", s.DigestMinute/60, s.DigestMinute%60),
 		"NextDigest":        next,
@@ -95,6 +98,7 @@ func (w *web) saveAlertSettings(rw http.ResponseWriter, r *http.Request, u *stor
 		DigestEmergencies:       r.PostFormValue("digest_emergencies") == "on",
 		DigestStale:             r.PostFormValue("digest_stale") == "on",
 		DigestUpdates:           r.PostFormValue("digest_updates") == "on",
+		DigestAccepted:          r.PostFormValue("digest_accepted") == "on",
 		DigestAllClear:          r.PostFormValue("digest_all_clear") == "on",
 		DigestNewMinSeverity:    r.PostFormValue("digest_new_min_severity"),
 	}
@@ -106,7 +110,7 @@ func (w *web) saveAlertSettings(rw http.ResponseWriter, r *http.Request, u *stor
 		}
 		s.EmergencyMinCVSS = &score
 	}
-	if s.DigestNewMinSeverity != "" && !slices.Contains(digestSeverities, s.DigestNewMinSeverity) {
+	if s.DigestNewMinSeverity != "" && !slices.Contains(severities, s.DigestNewMinSeverity) {
 		w.renderSettings(rw, r, u, http.StatusBadRequest, "", "Choose a severity for new vulnerabilities in the digest.")
 		return
 	}
@@ -142,6 +146,22 @@ func (w *web) saveAlertSettings(rw http.ResponseWriter, r *http.Request, u *stor
 	}
 	w.log.Info("alert settings changed", "by", u.Email)
 	w.alerts.poke()
+	w.renderSettings(rw, r, u, http.StatusOK, "Saved.", "")
+}
+
+// saveView changes the lowest severity the user's own pages show.
+func (w *web) saveView(rw http.ResponseWriter, r *http.Request, u *store.User) {
+	r.Body = http.MaxBytesReader(rw, r.Body, maxFormBytes)
+	sev := r.PostFormValue("min_severity")
+	if !slices.Contains(severities, sev) {
+		w.renderSettings(rw, r, u, http.StatusBadRequest, "", "Choose the lowest severity to show.")
+		return
+	}
+	if err := w.store.SetMinSeverity(r.Context(), u.ID, sev); err != nil {
+		w.fail(rw, r, err)
+		return
+	}
+	u.MinSeverity = sev
 	w.renderSettings(rw, r, u, http.StatusOK, "Saved.", "")
 }
 

@@ -1,0 +1,32 @@
+{{define "title"}}Accept {{.Vulnerability}} · Best Before{{end}}
+{{define "content"}}
+<h1>Accept {{.Vulnerability}} on {{.Agent.Hostname}}</h1>
+{{with .Error}}<p role="alert"><strong>{{.}}</strong></p>{{end}}
+<p>In the {{.Where}}:</p>
+<table>
+	<thead><tr><th>Package</th><th>Version</th><th>Fixed in</th><th>Severity</th><th>CVSS</th><th>Known exploited</th></tr></thead>
+	<tbody>
+	{{range .Findings}}
+		<tr>
+			<td>{{.Package}}</td><td>{{.Version}}</td><td>{{if .FixVersions}}{{join .FixVersions ", "}}{{else}}no fix yet{{end}}</td>
+			<td>{{.Severity}}</td><td>{{if .CVSS}}{{printf "%.1f" .CVSS}}{{end}}</td><td>{{if .KnownExploited}}<strong>yes</strong>{{end}}</td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
+{{with (index .Findings 0).URL}}<p><a href="{{.}}" rel="noreferrer">Read the advisory</a></p>{{end}}
+
+{{with .Risk}}
+<p>Accepted on {{date .AcceptedAt}}{{with .AcceptedBy}} by {{.}}{{end}}, until {{date .ExpiresAt}}: {{.Reason}}</p>
+{{end}}
+
+<p>Until it expires, an accepted vulnerability does not count towards the server's status, raises no emergency and is left out of the digest. It then counts again, and the digest says so. The acceptance covers this vulnerability in every package of the {{.Where}} on this server only.</p>
+<form method="post" action="/servers/{{.Agent.ID}}/risks">
+	<input type="hidden" name="target" value="{{.Target}}">
+	<input type="hidden" name="vulnerability" value="{{.Vulnerability}}">
+	<p><label>Why is it acceptable?<br>
+		<textarea name="reason" rows="4" cols="60" maxlength="1000" required>{{.Reason}}</textarea></label></p>
+	<p><label>Until <input type="date" name="expires" value="{{.Expires}}" min="{{.Min}}" max="{{.Max}}" required></label> (at 00:00 UTC; a year at most)</p>
+	<p><button>Accept the risk</button> <a href="/servers/{{.Agent.ID}}">Cancel</a></p>
+</form>
+{{end}}

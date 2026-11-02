@@ -80,7 +80,7 @@ func TestSchemaAlerts(t *testing.T) {
 		"stale with a vulnerability": {insertAlert, []any{agentID, "stale", "CVE-2026-0001", unix(now)}, "CHECK"},
 		"emergency without one":      {insertAlert, []any{agentID, "emergency", "", unix(now)}, "CHECK"},
 		"unknown kind":               {insertAlert, []any{agentID, "panic", "CVE-2026-0001", unix(now)}, "CHECK"},
-		"second settings row":        {`INSERT INTO alert_settings SELECT 2, emergency_known_exploited, emergency_min_cvss, reminder_days, digest_weekday, digest_minute, digest_timezone, digest_sent_at, digest_emergencies, digest_stale, digest_updates, digest_new_min_severity, digest_all_clear FROM alert_settings`, nil, "CHECK"},
+		"second settings row":        {`INSERT INTO alert_settings SELECT 2, emergency_known_exploited, emergency_min_cvss, reminder_days, digest_weekday, digest_minute, digest_timezone, digest_sent_at, digest_emergencies, digest_stale, digest_updates, digest_new_min_severity, digest_accepted, digest_all_clear FROM alert_settings`, nil, "CHECK"},
 		"CVSS above 10":              {`UPDATE alert_settings SET emergency_min_cvss = 10.5`, nil, "CHECK"},
 		"unknown severity":           {`UPDATE alert_settings SET digest_new_min_severity = 'unknown'`, nil, "CHECK"},
 		"digest at 24:00":            {`UPDATE alert_settings SET digest_minute = 1440`, nil, "CHECK"},

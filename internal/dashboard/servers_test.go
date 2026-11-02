@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,97 @@ func TestOverviewAndServerPage(t *testing.T) {
 
 	if rec := tw.do(http.MethodGet, "/servers/nope", nil, admin); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown server: HTTP %d", rec.Code)
+	}
+}
+
+// A user's threshold and accepted risks take findings out of the counts and
+// the status, but never out of sight.
+func TestThresholdAndAcceptedRisks(t *testing.T) {
+	tw := newTestWeb(t, "")
+	ctx := context.Background()
+	tw.store.CreateEnrolmentCode(ctx, [32]byte{1}, "", tw.now, tw.now.Add(time.Hour))
+	key, _ := protocol.GenerateAgentKey()
+	a, _ := tw.store.RedeemEnrolmentCode(ctx, [32]byte{1}, store.NewAgent{PublicKey: key.Public(), Hostname: "web-01"}, tw.now)
+	r := testServerReport()
+	r.Host.APT.Upgradable = nil
+	body, _ := json.Marshal(r)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	db := fakeDB{findings: []vulns.Finding{
+		{Target: vulns.TargetHost, Package: "openssl", Version: "3.0.13", Kind: vulns.KindPackage, Vulnerability: "CVE-2026-0001",
+			Severity: "critical", CVSS: 9.8, FixVersions: []string{"3.0.14"}},
+		{Target: vulns.TargetHost, Package: "libssl3", Version: "3.0.13", Kind: vulns.KindPackage, Vulnerability: "CVE-2026-0001",
+			Severity: "critical", CVSS: 9.8, FixVersions: []string{"3.0.14"}},
+		{Target: vulns.TargetHost, Package: "curl", Version: "8.5.0", Kind: vulns.KindPackage, Vulnerability: "CVE-2026-0002",
+			Severity: "medium", CVSS: 5.3, FixVersions: []string{"8.5.1"}},
+		{Target: testImage, Package: "zlib", Version: "1.2", Kind: vulns.KindPackage, Vulnerability: "CVE-2026-0003",
+			Severity: "low", FixVersions: []string{"1.3"}, KnownExploited: true},
+	}}
+	newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now }).match(ctx, a.ID)
+	admin := tw.session("admin@example.org")
+	server := "/servers/" + a.ID
+
+	// From high up, the medium curl finding is hidden; the exploited zlib
+	// one is not, whatever its severity.
+	if rec := tw.do(http.MethodPost, "/settings/view", url.Values{"min_severity": {"high"}}, admin); rec.Code != http.StatusOK {
+		t.Fatalf("threshold: HTTP %d", rec.Code)
+	}
+	if rec := tw.do(http.MethodPost, "/settings/view", url.Values{"min_severity": {"unknown"}}, admin); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown threshold: HTTP %d", rec.Code)
+	}
+	page := tw.do(http.MethodGet, server, nil, admin).Body.String()
+	for _, want := range []string{"Below your threshold (1)", "Accepted risks (0)", "8.5.1"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("server page lacks %q", want)
+		}
+	}
+
+	// Accepting the critical openssl finding leaves the exploited zlib one.
+	form := url.Values{"target": {vulns.TargetHost}, "vulnerability": {"CVE-2026-0001"}}
+	rec := tw.do(http.MethodGet, server+"/risks/new?"+form.Encode(), nil, admin)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "libssl3") ||
+		!strings.Contains(rec.Body.String(), `value="`+tw.now.Add(riskLifetime).UTC().Format(dateLayout)+`"`) {
+		t.Fatalf("risk page: HTTP %d\n%s", rec.Code, rec.Body)
+	}
+	for name, bad := range map[string]url.Values{
+		"no reason":     {"reason": {"  "}, "expires": {tw.now.AddDate(0, 1, 0).Format(dateLayout)}},
+		"control chars": {"reason": {"a\x1b[2J"}, "expires": {tw.now.AddDate(0, 1, 0).Format(dateLayout)}},
+		"past":          {"reason": {"x"}, "expires": {tw.now.AddDate(0, 0, -1).Format(dateLayout)}},
+		"too far":       {"reason": {"x"}, "expires": {tw.now.AddDate(1, 0, 2).Format(dateLayout)}},
+	} {
+		bad["target"], bad["vulnerability"] = form["target"], form["vulnerability"]
+		if rec := tw.do(http.MethodPost, server+"/risks", bad, admin); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: HTTP %d", name, rec.Code)
+		}
+	}
+	other := url.Values{"target": {vulns.TargetHost}, "vulnerability": {"CVE-2026-9999"}, "reason": {"x"}, "expires": {tw.now.AddDate(0, 1, 0).Format(dateLayout)}}
+	if rec := tw.do(http.MethodPost, server+"/risks", other, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("vulnerability not on the server: HTTP %d", rec.Code)
+	}
+	accept := url.Values{"target": form["target"], "vulnerability": form["vulnerability"],
+		"reason": {"Not exposed: <b>internal</b> only"}, "expires": {tw.now.AddDate(0, 1, 0).Format(dateLayout)}}
+	if rec := tw.do(http.MethodPost, server+"/risks", accept, admin); rec.Code != http.StatusSeeOther {
+		t.Fatalf("accept: HTTP %d\n%s", rec.Code, rec.Body)
+	}
+	page = tw.do(http.MethodGet, server, nil, admin).Body.String()
+	for _, want := range []string{"Accepted risks (2)", "Not exposed: &lt;b&gt;internal&lt;/b&gt; only", "by admin@example.org", "Status: <strong>" + statusCritical} {
+		if !strings.Contains(page, want) {
+			t.Errorf("server page lacks %q", want)
+		}
+	}
+
+	// With zlib accepted too, nothing the user sees is left: OK.
+	accept["target"], accept["vulnerability"] = []string{testImage}, []string{"CVE-2026-0003"}
+	tw.do(http.MethodPost, server+"/risks", accept, admin)
+	if page := tw.do(http.MethodGet, "/", nil, admin).Body.String(); !strings.Contains(page, "<td>"+statusOK+"</td>") {
+		t.Errorf("overview:\n%s", page)
+	}
+
+	// Withdrawn, openssl counts again.
+	if rec := tw.do(http.MethodPost, server+"/risks/withdraw", form, admin); rec.Code != http.StatusSeeOther {
+		t.Fatalf("withdraw: HTTP %d", rec.Code)
+	}
+	if page := tw.do(http.MethodGet, "/", nil, admin).Body.String(); !strings.Contains(page, "<td>"+statusCritical+"</td>") {
+		t.Errorf("overview after withdrawing:\n%s", page)
 	}
 }
 

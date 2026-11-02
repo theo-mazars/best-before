@@ -22,4 +22,13 @@ Severity medium or worse, found or given a fix since the last digest.
 web-01 <https://dashboard.example.vpn/servers/web-01-id>
 - CVE-2026-3000 in curl 8.5.0-2ubuntu10.5 (host): high, CVSS 7.5, fixed in 8.5.0-2ubuntu10.6
 
+ACCEPTED RISKS EXPIRING
+Expired since the last digest, or expiring within a week. Once expired, they count again.
+
+web-01 <https://dashboard.example.vpn/servers/web-01-id>
+- CVE-2026-2000 in openssl 3.0.13-0ubuntu3.5 (host): critical, CVSS 9.8, fixed in 3.0.13-0ubuntu3.6
+  Expires 5 Nov 2026, 10:00 UTC. Accepted: Only reachable <over the VPN>
+- CVE-2026-3000 in curl 8.5.0-2ubuntu10.5 (host): high, CVSS 7.5, fixed in 8.5.0-2ubuntu10.6
+  Expired 1 Nov 2026, 10:00 UTC, counts again. Accepted: Waiting for the maintenance window
+
 Vulnerabilities without a fix are not listed: they are on each server's page.

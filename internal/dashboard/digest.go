@@ -37,6 +37,7 @@ type digest struct {
 	Stale         []staleServer
 	Updates       []updatesServer
 	New           []digestServer
+	Accepted      []digestServer
 }
 
 type digestServer struct {
@@ -47,6 +48,7 @@ type digestServer struct {
 
 type digestFinding struct {
 	Line string // the finding on one line of text
+	Note string // more about it, e.g. why it was accepted
 	URL  string // its advisory
 }
 
@@ -64,7 +66,7 @@ type updatesServer struct {
 }
 
 func (d *digest) AllClear() bool {
-	return len(d.Emergencies)+len(d.Stale)+len(d.Updates)+len(d.New) == 0
+	return len(d.Emergencies)+len(d.Stale)+len(d.Updates)+len(d.New)+len(d.Accepted) == 0
 }
 
 func (d *digest) title() string {
@@ -89,6 +91,9 @@ func (d *digest) title() string {
 	}
 	if n := count(d.New); n > 0 {
 		parts = append(parts, plural(n, "new vulnerability", "new vulnerabilities"))
+	}
+	if n := count(d.Accepted); n > 0 {
+		parts = append(parts, plural(n, "accepted risk", "accepted risks")+" expiring")
 	}
 	return "Best Before weekly digest: " + strings.Join(parts, ", ")
 }
@@ -139,11 +144,24 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 		if err != nil {
 			return nil, err
 		}
+		rs, err := loadRisks(ctx, a.store, ag.ID)
+		if err != nil {
+			return nil, err
+		}
 		emergencies := digestServer{Hostname: host, URL: url}
 		fresh := digestServer{Hostname: host, URL: url}
+		expiring := digestServer{Hostname: host, URL: url}
 		for _, f := range findings {
 			line := digestFinding{Line: findingLine(&f, names.where(f.Target)), URL: f.URL}
+			// An acceptance that ended since the last digest, or ends within
+			// a week, is worth a look; one without a fix stays silent.
+			if r, ok := rs.of(&f); ok && s.DigestAccepted && f.Fixable() &&
+				r.ExpiresAt.After(since) && !r.ExpiresAt.After(now.Add(7*24*time.Hour)) {
+				expiring.Findings = append(expiring.Findings, digestFinding{Line: line.Line, Note: acceptedNote(&r, now), URL: f.URL})
+			}
 			switch {
+			case rs.active(&f, now) != nil:
+				// Accepted: neither an emergency nor new until it expires.
 			case isEmergency(&f, s):
 				// Sent when found; never repeated as new.
 				if s.DigestEmergencies {
@@ -160,8 +178,24 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 		if len(fresh.Findings) > 0 {
 			d.New = append(d.New, fresh)
 		}
+		if len(expiring.Findings) > 0 {
+			d.Accepted = append(d.Accepted, expiring)
+		}
 	}
 	return d, nil
+}
+
+// acceptedNote says when an acceptance ends, who made it and why.
+func acceptedNote(r *store.AcceptedRisk, now time.Time) string {
+	when := "Expires " + formatDate(r.ExpiresAt)
+	if !r.Active(now) {
+		when = "Expired " + formatDate(r.ExpiresAt) + ", counts again"
+	}
+	by := ""
+	if r.AcceptedBy != "" {
+		by = " by " + r.AcceptedBy
+	}
+	return notify.Clean(fmt.Sprintf("%s. Accepted%s: %s", when, by, r.Reason))
 }
 
 // emergencyRule describes which vulnerabilities with a fix are emergencies,
@@ -175,10 +209,6 @@ func emergencyRule(s *store.AlertSettings) string {
 		rules = append(rules, fmt.Sprintf("CVSS %.1f or more", *s.EmergencyMinCVSS))
 	}
 	return strings.Join(rules, ", or ")
-}
-
-func severityRank(s string) int {
-	return map[string]int{"negligible": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}[s]
 }
 
 func (d *digest) message() (*notify.Message, error) {

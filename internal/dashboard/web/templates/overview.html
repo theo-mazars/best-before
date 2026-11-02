@@ -17,6 +17,7 @@
 			<th>Reboot</th>
 			<th>Images</th>
 			<th>No fix yet</th>
+			<th>Accepted</th>
 			<th>Last report</th>
 		</tr>
 	</thead>
@@ -33,13 +34,14 @@
 			<td>{{if .RebootRequired}}required{{else}}no{{end}}</td>
 			<td>{{.Images}}{{if .NotChecked}} ({{.NotChecked}} not checked){{end}}</td>
 			<td>{{.NoFixYet}}</td>
+			<td>{{.Accepted}}</td>
 			<td>{{date .LastReportAt}}</td>
 		</tr>
-		{{range .Problems}}<tr><td></td><td colspan="10">Problem: {{.}}</td></tr>{{end}}
+		{{range .Problems}}<tr><td></td><td colspan="11">Problem: {{.}}</td></tr>{{end}}
 	{{end}}
 	</tbody>
 </table>
-<p>Counts only include vulnerabilities with a fix available. Those without one are listed on each server's page and never raise its status.</p>
+<p>Counts only include vulnerabilities with a fix available, of severity {{.User.MinSeverity}} or worse (<a href="/settings">change</a>), that have not been accepted. The others are listed on each server's page and never raise its status.</p>
 {{else}}
 <p>No servers yet. The fridge is empty: <a href="/agents">add a server</a> to see what's inside.</p>
 {{end}}

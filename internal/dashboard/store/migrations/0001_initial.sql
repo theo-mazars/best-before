@@ -9,6 +9,9 @@ CREATE TABLE users (
 	totp_secret    BLOB    CHECK (totp_secret IS NULL OR length(totp_secret) = 20),
 	totp_last_step INTEGER NOT NULL DEFAULT 0,
 	role           TEXT    NOT NULL CHECK (role IN ('admin', 'user')),
+	-- The lowest severity the user's pages show; less severe findings are
+	-- still stored, and listed apart.
+	min_severity   TEXT    NOT NULL DEFAULT 'low' CHECK (min_severity IN ('critical', 'high', 'medium', 'low', 'negligible')),
 	created_at     INTEGER NOT NULL
 ) STRICT;
 
@@ -88,6 +91,22 @@ CREATE TABLE findings (
 	PRIMARY KEY (agent_id, target, package, vulnerability)
 ) STRICT;
 
+-- Vulnerabilities the owner has accepted on one server's host or image, with
+-- a reason, until expires_at. An accepted finding does not count towards the
+-- server's status and raises no emergency; once expired, it counts again.
+-- Rows outlive the findings, so that a finding that comes back is still
+-- accepted.
+CREATE TABLE accepted_risks (
+	agent_id      TEXT    NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
+	target        TEXT    NOT NULL CHECK (length(target) BETWEEN 1 AND 128),
+	vulnerability TEXT    NOT NULL CHECK (length(vulnerability) BETWEEN 1 AND 128),
+	reason        TEXT    NOT NULL CHECK (length(reason) BETWEEN 1 AND 1000),
+	accepted_by   TEXT    REFERENCES users (id) ON DELETE SET NULL,
+	accepted_at   INTEGER NOT NULL,
+	expires_at    INTEGER NOT NULL CHECK (expires_at > accepted_at),
+	PRIMARY KEY (agent_id, target, vulnerability)
+) STRICT;
+
 -- Where alerts and digests go. settings holds the channel's ordinary fields as
 -- a JSON object; secrets holds its passwords, tokens and secret URLs, sealed
 -- with a key derived from the dashboard's identity key, never in plain text.
@@ -113,8 +132,9 @@ CREATE TABLE channels (
 -- minutes after midnight in digest_timezone. digest_sent_at is NULL until the
 -- first digest is due. The digest_* flags choose its sections;
 -- digest_new_min_severity is the lowest severity of the new vulnerabilities
--- it lists, NULL for none. Without digest_all_clear, a digest with nothing to
--- say is not sent.
+-- it lists, NULL for none. digest_accepted lists the accepted risks that
+-- expired since the last digest or expire within a week. Without
+-- digest_all_clear, a digest with nothing to say is not sent.
 CREATE TABLE alert_settings (
 	id                        INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
 	emergency_known_exploited INTEGER NOT NULL CHECK (emergency_known_exploited IN (0, 1)),
@@ -128,13 +148,14 @@ CREATE TABLE alert_settings (
 	digest_stale              INTEGER NOT NULL CHECK (digest_stale IN (0, 1)),
 	digest_updates            INTEGER NOT NULL CHECK (digest_updates IN (0, 1)),
 	digest_new_min_severity   TEXT    CHECK (digest_new_min_severity IN ('critical', 'high', 'medium', 'low', 'negligible')),
+	digest_accepted           INTEGER NOT NULL CHECK (digest_accepted IN (0, 1)),
 	digest_all_clear          INTEGER NOT NULL CHECK (digest_all_clear IN (0, 1))
 ) STRICT;
 
 INSERT INTO alert_settings (id, emergency_known_exploited, emergency_min_cvss, reminder_days,
 	digest_weekday, digest_minute, digest_timezone,
-	digest_emergencies, digest_stale, digest_updates, digest_new_min_severity, digest_all_clear)
-VALUES (1, 1, 9.0, 7, 1, 480, 'UTC', 1, 1, 1, 'medium', 1);
+	digest_emergencies, digest_stale, digest_updates, digest_new_min_severity, digest_accepted, digest_all_clear)
+VALUES (1, 1, 9.0, 7, 1, 480, 'UTC', 1, 1, 1, 'medium', 1, 1);
 
 -- The alerts raised, so that each is sent once: an emergency per (server,
 -- vulnerability), or a server gone stale (vulnerability ''). notified_at is

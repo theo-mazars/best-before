@@ -67,7 +67,7 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		sealer:     newSealer(key),
 	}
 	funcs := template.FuncMap{"date": formatDate, "join": strings.Join, "duration": formatDuration}
-	for _, page := range []string{"login", "setup", "agents", "code", "error", "overview", "server", "settings", "channel"} {
+	for _, page := range []string{"login", "setup", "agents", "code", "error", "overview", "server", "risk", "settings", "channel"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -90,12 +90,16 @@ func (w *web) routes(mux *http.ServeMux) {
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
 	mux.Handle("GET /{$}", page(w.admin(w.overview)))
 	mux.Handle("GET /servers/{id}", page(w.admin(w.serverPage)))
+	mux.Handle("GET /servers/{id}/risks/new", page(w.admin(w.riskPage)))
+	mux.Handle("POST /servers/{id}/risks", page(w.admin(w.acceptRisk)))
+	mux.Handle("POST /servers/{id}/risks/withdraw", page(w.admin(w.withdrawRisk)))
 	mux.Handle("GET /agents", page(w.admin(w.agentsPage)))
 	mux.Handle("POST /agents/codes", page(w.admin(w.createCode)))
 	mux.Handle("POST /agents/{id}/revoke", page(w.admin(w.revoke)))
 	mux.Handle("GET /settings", page(w.admin(w.settingsPage)))
 	mux.Handle("POST /settings/alerts", page(w.admin(w.saveAlertSettings)))
 	mux.Handle("POST /settings/digest", page(w.admin(w.sendDigest)))
+	mux.Handle("POST /settings/view", page(w.admin(w.saveView)))
 	mux.Handle("GET /settings/channels/new", page(w.admin(w.newChannelPage)))
 	mux.Handle("POST /settings/channels", page(w.admin(w.createChannel)))
 	mux.Handle("GET /settings/channels/{id}", page(w.admin(w.channelPage)))

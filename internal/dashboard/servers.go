@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -16,7 +17,8 @@ import (
 )
 
 // serverSummary is one server on the overview. Counts only include
-// fixable findings: the others are silent.
+// fixable findings the user sees and has not accepted: the others are
+// silent.
 type serverSummary struct {
 	ID              string
 	Hostname        string
@@ -27,6 +29,7 @@ type serverSummary struct {
 	Medium          int
 	KnownExploited  int
 	NoFixYet        int
+	Accepted        int
 	SecurityUpdates int
 	Updates         int
 	RebootRequired  bool
@@ -47,9 +50,15 @@ const (
 	statusOK        = "OK"
 )
 
-func (s *serverSummary) count(findings []store.Finding) {
+func (s *serverSummary) count(findings []store.Finding, rs risks, min string, now time.Time) {
 	for _, f := range findings {
-		if !f.Fixable() {
+		switch place(&f, rs, min, now) {
+		case placeAccepted:
+			s.Accepted++
+			continue
+		case placeBelow:
+			continue
+		case placeNoFix:
 			s.NoFixYet++
 			continue
 		}
@@ -142,7 +151,7 @@ func (w *web) overview(rw http.ResponseWriter, r *http.Request, u *store.User) {
 		if a.Revoked() {
 			continue
 		}
-		s, _, _, _, err := w.summary(r, &a, now)
+		s, _, err := w.summary(r, &a, u, now)
 		if err != nil {
 			w.fail(rw, r, err)
 			return
@@ -153,31 +162,41 @@ func (w *web) overview(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	w.render(rw, http.StatusOK, "overview", map[string]any{"User": u, "Servers": servers, "DB": w.db.Status()})
 }
 
-// summary loads what is known about one server. The report is nil before
-// the first one arrives.
-func (w *web) summary(r *http.Request, a *store.Agent, now time.Time) (*serverSummary, *store.Report, *report.Report, []store.Finding, error) {
+// serverState is what is known about one server.
+type serverState struct {
+	rep      *store.Report
+	body     *report.Report
+	findings []store.Finding
+	risks    risks
+}
+
+// summary loads what is known about one server, as user u sees it. The
+// state is nil before the first report arrives.
+func (w *web) summary(r *http.Request, a *store.Agent, u *store.User, now time.Time) (*serverSummary, *serverState, error) {
 	s := &serverSummary{ID: a.ID, Hostname: a.Hostname, LastReportAt: a.LastReportAt}
 	rep, err := w.store.Report(r.Context(), a.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		s.Status = s.status(agentStatus(a, now, w.cfg.StaleAfter), nil)
-		return s, nil, nil, nil, nil
+		return s, nil, nil
 	}
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, err
 	}
-	var body report.Report
-	if err := json.Unmarshal(rep.Body, &body); err != nil {
-		return nil, nil, nil, nil, err
+	st := &serverState{rep: rep, body: &report.Report{}}
+	if err := json.Unmarshal(rep.Body, st.body); err != nil {
+		return nil, nil, err
 	}
-	findings, err := w.store.Findings(r.Context(), a.ID)
-	if err != nil {
-		return nil, nil, nil, nil, err
+	if st.findings, err = w.store.Findings(r.Context(), a.ID); err != nil {
+		return nil, nil, err
 	}
-	s.read(&body)
-	s.notChecked(rep, &body)
-	s.count(findings)
+	if st.risks, err = loadRisks(r.Context(), w.store, a.ID); err != nil {
+		return nil, nil, err
+	}
+	s.read(st.body)
+	s.notChecked(rep, st.body)
+	s.count(st.findings, st.risks, u.MinSeverity, now)
 	s.Status = s.status(agentStatus(a, now, w.cfg.StaleAfter), rep)
-	return s, rep, &body, findings, nil
+	return s, st, nil
 }
 
 type imageView struct {
@@ -194,7 +213,7 @@ type imageView struct {
 	// Imprecise are known runtimes whose version is too vague to match,
 	// e.g. "redis 7".
 	Imprecise []string
-	Findings  []store.Finding
+	Findings  []findingView
 	NoFixYet  int
 }
 
@@ -204,9 +223,17 @@ type imageView struct {
 // but does not change the server's status.
 func (v *imageView) NothingChecked() bool { return v.NotChecked == "" && len(v.Checked) == 0 }
 
-type unfixedView struct {
-	Where string
+// findingView is a finding on a server's page.
+type findingView struct {
+	Where     string
+	AcceptURL string
+	// Risk is the finding's acceptance, if running.
+	Risk *store.AcceptedRisk
 	store.Finding
+}
+
+func riskURL(agentID string, f *store.Finding) string {
+	return "/servers/" + agentID + "/risks/new?" + url.Values{"target": {f.Target}, "vulnerability": {f.Vulnerability}}.Encode()
 }
 
 func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User) {
@@ -219,16 +246,19 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 		w.fail(rw, r, err)
 		return
 	}
-	s, rep, body, findings, err := w.summary(r, a, w.now())
+	now := w.now()
+	s, st, err := w.summary(r, a, u, now)
 	if err != nil {
 		w.fail(rw, r, err)
 		return
 	}
-	data := map[string]any{"User": u, "Server": s, "Agent": a, "Report": rep, "DB": w.db.Status()}
-	if body == nil {
+	data := map[string]any{"User": u, "Server": s, "Agent": a, "DB": w.db.Status()}
+	if st == nil {
 		w.render(rw, http.StatusOK, "server", data)
 		return
 	}
+	rep, body := st.rep, st.body
+	data["Report"] = rep
 
 	upgradable := slices.Clone(body.Host.APT.Upgradable)
 	sort.SliceStable(upgradable, func(i, j int) bool { return upgradable[i].Security && !upgradable[j].Security })
@@ -271,25 +301,32 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 		}
 	}
 
-	var hostFindings []store.Finding
-	var unfixed []unfixedView
-	for _, f := range findings {
+	var hostFindings, unfixed, below, accepted []findingView
+	for _, f := range st.findings {
 		where := "host"
 		if v := images[f.Target]; v != nil && len(v.References) > 0 {
 			where = v.References[0]
 		} else if f.Target != vulns.TargetHost {
 			where = shortImageID(f.Target)
 		}
-		switch {
-		case !f.Fixable():
-			unfixed = append(unfixed, unfixedView{Where: where, Finding: f})
+		fv := findingView{Where: where, AcceptURL: riskURL(a.ID, &f), Risk: st.risks.active(&f, now), Finding: f}
+		switch place(&f, st.risks, u.MinSeverity, now) {
+		case placeAccepted:
+			accepted = append(accepted, fv)
+		case placeBelow:
+			below = append(below, fv)
+		case placeNoFix:
+			unfixed = append(unfixed, fv)
 			if v := images[f.Target]; v != nil {
 				v.NoFixYet++
 			}
-		case f.Target == vulns.TargetHost:
-			hostFindings = append(hostFindings, f)
-		case images[f.Target] != nil:
-			images[f.Target].Findings = append(images[f.Target].Findings, f)
+		default:
+			switch {
+			case f.Target == vulns.TargetHost:
+				hostFindings = append(hostFindings, fv)
+			case images[f.Target] != nil:
+				images[f.Target].Findings = append(images[f.Target].Findings, fv)
+			}
 		}
 	}
 	// Images with the most urgent findings first.
@@ -300,11 +337,13 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 	data["HostFindings"] = hostFindings
 	data["Images"] = order
 	data["Unfixed"] = unfixed
+	data["Below"] = below
+	data["Accepted"] = accepted
 	w.render(rw, http.StatusOK, "server", data)
 }
 
 // worst ranks a list of findings, already sorted most urgent first.
-func worst(fs []store.Finding) int {
+func worst(fs []findingView) int {
 	switch {
 	case len(fs) == 0:
 		return 99
