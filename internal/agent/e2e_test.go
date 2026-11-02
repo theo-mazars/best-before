@@ -201,3 +201,43 @@ func TestEndToEndPlainHTTP(t *testing.T) {
 		t.Fatalf("report: %v\n%s", err, e.logs)
 	}
 }
+
+func TestMoveDashboard(t *testing.T) {
+	e := startDashboard(t, "https")
+	a := newTestAgent(t)
+	if err := a.enrol(e.newCode()); err != nil {
+		t.Fatalf("enrol: %v\n%s", err, e.logs)
+	}
+	before, _ := os.ReadFile(a.config)
+
+	// Another dashboard: refused, and nothing changes.
+	other := startDashboard(t, "https")
+	if err := MoveDashboard(context.Background(), a.config, other.url, "", a.out); err == nil || !strings.Contains(err.Error(), "not the dashboard") {
+		t.Errorf("move to another dashboard: %v", err)
+	}
+	if after, _ := os.ReadFile(a.config); !bytes.Equal(before, after) {
+		t.Error("config changed by a refused move")
+	}
+
+	// The same dashboard at another address, with a stale TLS pin, as after
+	// moving it: accepted, pinned again, and reports go through.
+	stale := strings.Replace(string(before), "dashboard_tls_key = ", "dashboard_tls_key = "+protocol.EncodeTLSKeyHash(make([]byte, 32))+"\n#", 1)
+	os.WriteFile(a.config, []byte(stale), 0o644)
+	if err := a.run(); err == nil || !strings.Contains(err.Error(), "pinned") {
+		t.Fatalf("report with a stale pin: %v", err)
+	}
+	moved := strings.Replace(e.url, "127.0.0.1", "localhost", 1)
+	if err := MoveDashboard(context.Background(), a.config, moved, "", a.out); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	cfg, err := LoadConfig(a.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DashboardURL != moved || cfg.DashboardTLSKey == nil || !cfg.DashboardKey.Equal(e.pub) {
+		t.Errorf("config after move: %+v", cfg)
+	}
+	if err := a.run(); err != nil {
+		t.Fatalf("report after move: %v\n%s", err, e.logs)
+	}
+}

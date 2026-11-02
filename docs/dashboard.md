@@ -10,13 +10,24 @@ keeps everything in a single volume.
 
 ## Image
 
-Images are not published yet; they will be, signed, with the first release.
-Until then, build one from a checkout. The Dockerfile compiles the dashboard
-from source, so Docker is all you need:
+No image is published: you build it from the release's source, which takes a
+few minutes and needs only Docker. The Dockerfile compiles the dashboard in a
+pinned Go image and copies it alone into a minimal, non-root base image.
+
+Download the release's `best-before-<version>.tar.gz`, `SHA256SUMS` and
+`SHA256SUMS.sigstore.json`, and check them as described in
+[Releases](releases.md#verifying-a-release). Then, replacing `v0.1.0` with the
+version:
 
 ```sh
-make image        # prints the tag, e.g. bestbefore:v0.1.0
+tar -xzf best-before-v0.1.0.tar.gz
+cd best-before-v0.1.0
+docker build -f packaging/docker/Dockerfile --build-arg VERSION=v0.1.0 -t bestbefore:v0.1.0 .
 ```
+
+`best-before-v0.1.0.dashboard.spdx.json`, in the release, lists every module
+compiled into the dashboard. From a git checkout, `make image` does the same
+build, with the version from git.
 
 ### On Dokploy
 
@@ -80,10 +91,15 @@ public_url = https://dashboard.example.vpn:8443
 data_dir = /var/lib/bestbefore
 ```
 
+Agents keep the address they enrolled with. If `public_url` changes later,
+tell each server, as described in
+[the agent's documentation](agent.md#when-the-dashboard-moves).
+
 ## Starting it
 
 ```sh
 docker run -d --name bestbefore --restart unless-stopped \
+  --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -p 10.8.0.1:8443:8443 \
   -v "$PWD/dashboard.conf:/etc/bestbefore/dashboard.conf:ro" \
   -v bestbefore-data:/var/lib/bestbefore \
@@ -92,6 +108,9 @@ docker run -d --name bestbefore --restart unless-stopped \
 
 Replace `10.8.0.1` with the dashboard host's address on your VPN. Publishing
 on `0.0.0.0` would expose it on every network the host is on.
+
+The dashboard needs no privileges and writes only to its volume, so the
+container runs read-only, without capabilities, and cannot gain any.
 
 The dashboard serves HTTPS with its own self-signed certificate (`tls =
 builtin`). Agents pin it when they enrol, so there is nothing to set up for

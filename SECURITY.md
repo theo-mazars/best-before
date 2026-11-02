@@ -18,4 +18,6 @@ We aim to acknowledge reports within a few working days and will keep you inform
 
 ## Supported versions
 
-The project has not had a stable release yet. Until it does, only the latest commit on `main` is supported.
+Only the latest release is supported: fixes come as a new release, not as patches to older ones. Until version 1.0.0, a fix may come with other changes, which the release notes describe.
+
+Releases are signed and reproducible; see [docs/releases.md](docs/releases.md) to check that what you install is what this repository built.

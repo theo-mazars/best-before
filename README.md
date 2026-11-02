@@ -41,6 +41,7 @@ Best Before watches the system, not your applications: the programs inside an im
 
 - [Running the dashboard](docs/dashboard.md): starting it, the first admin, users, the vulnerability database, backups.
 - [Running the agent](docs/agent.md): installing, enrolling, Docker access, the systemd service.
+- [Releases](docs/releases.md): what each release contains, verifying its signature, reproducing it, making one.
 
 ## Development
 
@@ -50,6 +51,7 @@ Building and testing need only Go (see `go.mod` for the version), on Linux or ma
 make build   # binaries in ./bin
 make check   # formatting, vet and tests: run this before pushing
 make image   # the dashboard's container image
+make dist VERSION=v0.1.0-rc.1   # a release, unsigned: agent packages, source, SBOMs, checksums
 ```
 
 CI on GitHub Actions runs only when triggered by hand, so `make check` is the main safeguard.
@@ -87,9 +89,10 @@ Run `make check-pins` when you start working on a change, and commit any update 
 | `internal/protocol/` | How agents and the dashboard trust each other: keys, enrolment codes, signed messages |
 | `internal/report/` | Report schema shared by both |
 | `internal/config/` | The `key = value` configuration format |
-| `packaging/` | Dashboard image, agent systemd units, Docker socket proxy |
+| `packaging/` | Dashboard image, agent package and systemd units, Docker socket proxy |
 | `docs/` | Guides for operators |
-| `scripts/` | Development tools |
+| `scripts/` | Development and release scripts |
+| `tools/` | Pinned versions of the tools releases are built with (nfpm, Syft) |
 
 ## Security
 
@@ -97,4 +100,6 @@ See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
 ## Licence
 
-To be decided before the first public release.
+Best Before is free software under the [GNU Affero General Public License v3.0](LICENSE)
+(AGPL-3.0-only): you may use, change and share it, and if you let others use a
+modified version over a network, you must offer them its source.

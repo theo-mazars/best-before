@@ -1,0 +1,31 @@
+#!/bin/sh
+# Installing does not enable the timer: the agent has nothing to do until
+# it is enrolled with "bestbefore-agent enrol". On upgrade, or reinstalling
+# after "apt remove", a timer enabled before stays enabled.
+set -e
+
+case "$1" in
+configure | abort-upgrade | abort-deconfigure | abort-remove)
+	systemd-sysusers bestbefore-agent.conf
+	# As debhelper does for units it does not enable. was-enabled says yes
+	# when nothing is recorded yet, hence asking debian-installed first.
+	if command -v deb-systemd-helper >/dev/null; then
+		if deb-systemd-helper debian-installed bestbefore-agent.timer; then
+			deb-systemd-helper unmask bestbefore-agent.timer >/dev/null || true
+			if deb-systemd-helper --quiet was-enabled bestbefore-agent.timer; then
+				deb-systemd-helper enable bestbefore-agent.timer >/dev/null || true
+			fi
+		fi
+		# Recorded, so that purging can disable it.
+		deb-systemd-helper update-state bestbefore-agent.timer >/dev/null || true
+	fi
+	if [ -d /run/systemd/system ]; then
+		systemctl --system daemon-reload >/dev/null || true
+	fi
+	if [ "$1" = configure ] && [ -z "$2" ]; then
+		echo "Enrol this server with the code from the dashboard: sudo bestbefore-agent enrol bb1_…"
+	fi
+	;;
+esac
+
+exit 0

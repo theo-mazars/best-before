@@ -1,0 +1,29 @@
+#!/bin/sh
+# "apt remove" masks the timer and keeps the enrolment. Purging also deletes
+# the enrolment and the agent's private key: revoke the agent in the
+# dashboard as well. The service user stays, as Debian advises, so that no
+# file can end up owned by a future user with the same ID.
+set -e
+
+if [ -d /run/systemd/system ]; then
+	systemctl --system daemon-reload >/dev/null || true
+fi
+
+case "$1" in
+remove)
+	if command -v deb-systemd-helper >/dev/null; then
+		deb-systemd-helper mask bestbefore-agent.timer >/dev/null || true
+	fi
+	;;
+purge)
+	if command -v deb-systemd-helper >/dev/null; then
+		deb-systemd-helper purge bestbefore-agent.timer >/dev/null || true
+		deb-systemd-helper unmask bestbefore-agent.timer >/dev/null || true
+	fi
+	rm -rf /var/lib/bestbefore-agent
+	rm -f /etc/bestbefore/agent.conf /etc/bestbefore/agent.conf.tmp
+	rmdir /etc/bestbefore 2>/dev/null || true
+	;;
+esac
+
+exit 0
