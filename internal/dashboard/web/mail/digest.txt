@@ -1,0 +1,50 @@
+Best Before weekly digest, {{date .Since}} to {{date .Until}}.
+{{- if .AllClear}}
+
+All clear: nothing to report. Everything is still fresh.
+{{- end}}
+{{- with .Emergencies}}
+
+EMERGENCIES STILL OPEN
+With a fix available, and {{$.EmergencyRule}}.
+{{- range .}}
+
+{{.Hostname}}{{with .URL}} <{{.}}>{{end}}
+{{- range .Findings}}
+- {{.Line}}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- with .Stale}}
+
+STALE SERVERS
+No report for too long: their vulnerabilities are unknown.
+{{range .}}
+- {{.Hostname}}, {{if .LastReportAt}}last report {{date .LastReportAt}}{{else}}never reported{{end}}{{with .URL}} <{{.}}>{{end}}
+{{- end}}
+{{- end}}
+{{- with .Updates}}
+
+SECURITY UPDATES
+{{- range .}}
+
+{{.Hostname}}{{if .RebootRequired}} (reboot required){{end}}{{with .URL}} <{{.}}>{{end}}
+{{- range .Packages}}
+- {{.}}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- with .New}}
+
+NEW VULNERABILITIES WITH A FIX
+Severity {{$.MinSeverity}} or worse, found or given a fix since the last digest.
+{{- range .}}
+
+{{.Hostname}}{{with .URL}} <{{.}}>{{end}}
+{{- range .Findings}}
+- {{.Line}}
+{{- end}}
+{{- end}}
+{{- end}}
+
+Vulnerabilities without a fix are not listed: they are on each server's page.

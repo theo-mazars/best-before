@@ -180,6 +180,65 @@ Only vulnerabilities **with a fix available** count towards a server's status.
 Those without one are listed on the server's page under **No fix yet**, and
 move up once a fix is published.
 
+## Alerts and digest
+
+Under **Settings**, add one or more notification channels: **email** (SMTP),
+**ntfy**, **Discord**, **Slack** or a **webhook** (a JSON POST, for your own
+automation). Each one can receive emergencies, the weekly digest, or both,
+and has a **Send test notification** button.
+
+**Emergencies** are sent as soon as they are found, once per server and
+vulnerability. By default, an emergency is a vulnerability **with a fix
+available** that is **known to be exploited** (on CISA's KEV catalogue), or
+has a **CVSS score of 9.0 or more**. Vulnerabilities without a fix are never
+sent; when a fix is published, they count like any other.
+
+While one stays open, a reminder is sent every 7 days. It closes by itself
+once a report no longer has it. A server that stops reporting is also sent at
+once, and again when it reports.
+
+The **weekly digest** is sent on Monday at 08:00 UTC by default. It lists, in
+this order: emergencies still open, stale servers, APT security updates
+waiting on each server, and vulnerabilities with a fix (medium or worse)
+found since the previous digest. With nothing to list, it says all is clear,
+so you know the dashboard is alive. Emails include HTML and plain text
+versions.
+
+What counts as noise is yours to decide, under **Settings › What is worth
+sending**:
+
+- whether being known exploited makes an emergency, and from which CVSS
+  score (or none);
+- how often open emergencies are repeated;
+- the digest's day, time and time zone, or no digest;
+- which sections it has, the lowest severity of the new vulnerabilities it
+  lists, and whether it is sent when all is clear.
+
+**Send the digest now** sends one at once, without moving the next.
+
+Alerts found while no channel takes them are not sent later, once one is
+added: the dashboard shows them. When every channel fails, the dashboard tries
+again 15 minutes later and logs why.
+
+The KEV catalogue comes with the vulnerability database, which includes it and
+is updated daily: there is nothing more to download.
+
+A few things to know:
+
+- Email needs an SMTP server with STARTTLS (usually port 587) or TLS (465),
+  and its certificate is always checked. Plain SMTP (`none`) is only accepted
+  for a relay on the dashboard's own machine: emails list every vulnerable
+  package.
+- ntfy and webhooks accept `http://` for a service on your private network;
+  Discord and Slack need `https://`.
+- On ntfy.sh, anyone who knows a topic can read it: choose a long random topic,
+  or protect it with an access token.
+- Passwords, tokens and webhook URLs are stored encrypted, with a key derived
+  from `identity.key`. A copy of the database alone does not reveal them;
+  someone with the whole data directory can. If `identity.key` is replaced,
+  enter them again.
+- Set `public_url` for notifications to link to the dashboard.
+
 ## Backups
 
 Everything is in the `bestbefore-data` volume. Back it up regularly, and above

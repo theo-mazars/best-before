@@ -139,8 +139,12 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 
 	db := vulns.Open(filepath.Join(c.DataDir, "vulnerability-db"), log)
 	defer db.Close()
+	secrets := newSealer(key)
+	alerts := newAlerter(st, secrets, c, log, time.Now)
 	match := newMatching(db, st, log, time.Now)
+	match.matched = alerts.poke
 	go match.run(ctx)
+	go alerts.run(ctx)
 	go match.updateLoop(ctx)
 
 	trust := &proxies{trusted: c.TrustedProxies}
@@ -159,6 +163,7 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	ui.alerts = alerts
 	go ui.cleanSessions(ctx)
 	if code, err := ui.setup.start(ctx, st); err != nil {
 		return err

@@ -87,3 +87,65 @@ CREATE TABLE findings (
 	CHECK ((fixable_since IS NULL) = (fix_versions = '')),
 	PRIMARY KEY (agent_id, target, package, vulnerability)
 ) STRICT;
+
+-- Where alerts and digests go. settings holds the channel's ordinary fields as
+-- a JSON object; secrets holds its passwords, tokens and secret URLs, sealed
+-- with a key derived from the dashboard's identity key, never in plain text.
+CREATE TABLE channels (
+	id          TEXT    NOT NULL PRIMARY KEY CHECK (length(id) = 26),
+	type        TEXT    NOT NULL CHECK (type IN ('email', 'ntfy', 'discord', 'slack', 'webhook')),
+	name        TEXT    NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+	settings    TEXT    NOT NULL CHECK (json_valid(settings) AND json_type(settings) = 'object'),
+	secrets     BLOB    NOT NULL,
+	emergencies INTEGER NOT NULL CHECK (emergencies IN (0, 1)),
+	digest      INTEGER NOT NULL CHECK (digest IN (0, 1)),
+	created_at  INTEGER NOT NULL,
+	updated_at  INTEGER NOT NULL
+) STRICT;
+
+-- The one row of alert settings, which decide what is worth sending.
+--
+-- A vulnerability with a fix is an emergency when it is known to be
+-- exploited (if emergency_known_exploited), or when its CVSS score reaches
+-- emergency_min_cvss (NULL: never by score).
+--
+-- digest_weekday is 0 (Sunday) to 6, or NULL for no digest; digest_minute is
+-- minutes after midnight in digest_timezone. digest_sent_at is NULL until the
+-- first digest is due. The digest_* flags choose its sections;
+-- digest_new_min_severity is the lowest severity of the new vulnerabilities
+-- it lists, NULL for none. Without digest_all_clear, a digest with nothing to
+-- say is not sent.
+CREATE TABLE alert_settings (
+	id                        INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+	emergency_known_exploited INTEGER NOT NULL CHECK (emergency_known_exploited IN (0, 1)),
+	emergency_min_cvss        REAL    CHECK (emergency_min_cvss BETWEEN 0.1 AND 10),
+	reminder_days             INTEGER NOT NULL CHECK (reminder_days BETWEEN 1 AND 365),
+	digest_weekday            INTEGER CHECK (digest_weekday BETWEEN 0 AND 6),
+	digest_minute             INTEGER NOT NULL CHECK (digest_minute BETWEEN 0 AND 1439),
+	digest_timezone           TEXT    NOT NULL CHECK (length(digest_timezone) BETWEEN 1 AND 64),
+	digest_sent_at            INTEGER,
+	digest_emergencies        INTEGER NOT NULL CHECK (digest_emergencies IN (0, 1)),
+	digest_stale              INTEGER NOT NULL CHECK (digest_stale IN (0, 1)),
+	digest_updates            INTEGER NOT NULL CHECK (digest_updates IN (0, 1)),
+	digest_new_min_severity   TEXT    CHECK (digest_new_min_severity IN ('critical', 'high', 'medium', 'low', 'negligible')),
+	digest_all_clear          INTEGER NOT NULL CHECK (digest_all_clear IN (0, 1))
+) STRICT;
+
+INSERT INTO alert_settings (id, emergency_known_exploited, emergency_min_cvss, reminder_days,
+	digest_weekday, digest_minute, digest_timezone,
+	digest_emergencies, digest_stale, digest_updates, digest_new_min_severity, digest_all_clear)
+VALUES (1, 1, 9.0, 7, 1, 480, 'UTC', 1, 1, 1, 'medium', 1);
+
+-- The alerts raised, so that each is sent once: an emergency per (server,
+-- vulnerability), or a server gone stale (vulnerability ''). notified_at is
+-- NULL until it has been sent, or dropped for want of a channel, and moves on
+-- with each reminder. A row is deleted when its cause goes away.
+CREATE TABLE alerts (
+	agent_id      TEXT    NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
+	kind          TEXT    NOT NULL CHECK (kind IN ('emergency', 'stale')),
+	vulnerability TEXT    NOT NULL,
+	raised_at     INTEGER NOT NULL,
+	notified_at   INTEGER,
+	CHECK ((kind = 'stale') = (vulnerability = '')),
+	PRIMARY KEY (agent_id, kind, vulnerability)
+) STRICT;

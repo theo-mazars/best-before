@@ -10,13 +10,13 @@
 You get a weekly digest, and an immediate alert when something urgent appears.
 
 > [!WARNING]
-> Best Before is at an early stage. Agents report their host and images, and the dashboard finds their known vulnerabilities. Alerts and digests are still to come.
+> Best Before is at an early stage. Agents report their host and images, the dashboard finds their known vulnerabilities, and sends emergencies and a weekly digest by email, ntfy, Discord, Slack or webhook.
 
 ## How it works
 
 ```
   Server A ── agent ──┐
-  Server B ── agent ──┼──(HTTPS, push only, signed reports)──▶ Dashboard ──▶ Email / ntfy / webhook
+  Server B ── agent ──┼──(HTTPS, push only, signed reports)──▶ Dashboard ──▶ Email / ntfy / Discord / Slack / webhook
   Server C ── agent ──┘                                          │
                                                              SQLite + web UI (VPN only)
 ```

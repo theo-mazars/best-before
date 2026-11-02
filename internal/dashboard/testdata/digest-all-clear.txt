@@ -1,0 +1,5 @@
+Best Before weekly digest, 26 Oct 2026, 10:00 UTC to 2 Nov 2026, 10:00 UTC.
+
+All clear: nothing to report. Everything is still fresh.
+
+Vulnerabilities without a fix are not listed: they are on each server's page.

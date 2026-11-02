@@ -1,0 +1,84 @@
+{{define "title"}}Settings · Best Before{{end}}
+{{define "content"}}
+<h1>Settings</h1>
+{{with .Message}}<p role="status">{{.}}</p>{{end}}
+{{with .Error}}<p role="alert"><strong>{{.}}</strong></p>{{end}}
+
+<h2>Notification channels</h2>
+<p>Emergencies are sent at once:
+{{with .EmergencyRule}}vulnerabilities with a fix, {{.}}.{{else}}<strong>none</strong>, as no rule below makes a vulnerability an emergency.{{end}}
+Each is sent once per server, then again as a reminder while it stays open. A server that stops reporting is also sent at once, and when it reports again.</p>
+{{if not .EmergencyChannels}}<p><strong>No channel receives emergencies.</strong> What is found meanwhile is not sent later: the dashboard shows it.</p>{{end}}
+{{if .PublicURLMissing}}<p>Set <code>public_url</code> in the dashboard configuration for notifications to link to the dashboard.</p>{{end}}
+
+{{if .Channels}}
+<table>
+	<thead><tr><th>Channel</th><th>Kind</th><th>Emergencies</th><th>Digest</th><th></th></tr></thead>
+	<tbody>
+	{{range .Channels}}
+		<tr>
+			<td><a href="/settings/channels/{{.ID}}">{{.Name}}</a>{{with .Problem}}<br><strong>Cannot send:</strong> {{.}}{{end}}</td>
+			<td>{{if .Type}}{{.Type.Label}}{{else}}{{.Channel.Type}}{{end}}</td>
+			<td>{{if .Emergencies}}yes{{else}}no{{end}}</td>
+			<td>{{if .Digest}}yes{{else}}no{{end}}</td>
+			<td>
+				<form method="post" action="/settings/channels/{{.ID}}/test"><button>Send test notification</button></form>
+			</td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
+{{else}}
+<p>No channels yet: nobody hears about what goes off.</p>
+{{end}}
+
+<p>Add a channel:
+{{range $i, $t := .Types}}{{if $i}} · {{end}}<a href="/settings/channels/new?type={{$t.Name}}">{{$t.Label}}</a>{{end}}
+</p>
+
+<h2>What is worth sending</h2>
+<p>Vulnerabilities without a fix are never sent: they are listed on each server's page until a fix appears.</p>
+<form method="post" action="/settings/alerts">
+	<h3>Emergencies</h3>
+	<p>A vulnerability with a fix is an emergency when:</p>
+	<p><label><input type="checkbox" name="emergency_known_exploited"{{if .Settings.EmergencyKnownExploited}} checked{{end}}> it is known to be exploited (CISA KEV), whatever its score</label></p>
+	<p><label>or its CVSS score is at least
+		<input type="number" name="emergency_cvss" min="0.1" max="10" step="0.1" value="{{.EmergencyCVSS}}" placeholder="none"></label>
+		<br><small>Leave empty for no emergency by score alone.</small></p>
+	<p>
+		<label>Remind about open emergencies every
+			<input type="number" name="reminder_days" min="1" max="365" value="{{.Settings.ReminderDays}}" required> days</label>
+	</p>
+
+	<h3>Weekly digest</h3>
+	<p>
+		<label>Send it on
+			<select name="weekday">
+				{{range .Weekdays}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+			</select>
+		</label>
+		<label>at <input type="time" name="time" value="{{.DigestTime}}" required></label>
+		<label>time zone <input type="text" name="timezone" value="{{.Settings.DigestTimezone}}" placeholder="Europe/London" required></label>
+	</p>
+	<p>It lists:</p>
+	<p><label><input type="checkbox" name="digest_emergencies"{{if .Settings.DigestEmergencies}} checked{{end}}> emergencies still open</label></p>
+	<p><label><input type="checkbox" name="digest_stale"{{if .Settings.DigestStale}} checked{{end}}> stale servers</label></p>
+	<p><label><input type="checkbox" name="digest_updates"{{if .Settings.DigestUpdates}} checked{{end}}> APT security updates waiting on each server</label></p>
+	<p><label>new vulnerabilities with a fix, found since the last digest:
+		<select name="digest_new_min_severity">
+			{{range .Severities}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+		</select></label></p>
+	<p><label><input type="checkbox" name="digest_all_clear"{{if .Settings.DigestAllClear}} checked{{end}}> with nothing to list, send it anyway to say all is clear</label>
+		<br><small>So you know the dashboard is alive.</small></p>
+	<p><button>Save</button></p>
+</form>
+<p>
+	{{with .NextDigest}}Next digest: {{date .}}.{{else}}No digest is sent.{{end}}
+	{{with .Settings.DigestSentAt}}Last one: {{date .}}.{{end}}
+</p>
+{{if .DigestChannels}}
+<form method="post" action="/settings/digest"><button>Send the digest now</button></form>
+{{else}}
+<p>No channel receives the digest.</p>
+{{end}}
+{{end}}
