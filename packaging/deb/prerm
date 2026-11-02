@@ -2,13 +2,8 @@
 # On removal, not on upgrade: stop scheduling reports.
 set -e
 
-case "$1" in
-remove)
-	if [ -d /run/systemd/system ]; then
-		systemctl stop bestbefore-agent.timer bestbefore-agent.service || true
-	fi
-	systemctl disable bestbefore-agent.timer >/dev/null 2>&1 || true
-	;;
-esac
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+	deb-systemd-invoke stop bestbefore-agent.timer bestbefore-agent.service >/dev/null || true
+fi
 
 exit 0

@@ -175,4 +175,4 @@ sudo apt purge bestbefore-agent
 ```
 
 Purging deletes the enrolment and the agent's private key. `apt remove` keeps
-them, so that after reinstalling, enabling the timer again is enough.
+them and the timer's state, so reinstalling picks up where it left off.

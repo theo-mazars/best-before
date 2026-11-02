@@ -7,6 +7,10 @@ arch: ${DEB_ARCH}
 platform: linux
 version: ${VERSION}
 version_schema: semver
+# The Debian revision, for fixing the package without a new release.
+release: "1"
+# Written by scripts/dist.sh; nfpm does not expand variables here.
+changelog: dist/build/changelog.yml
 section: admin
 priority: optional
 maintainer: Theo Mazars <me@theomazars.com>
@@ -45,6 +49,11 @@ contents:
   - expand: true
     src: ${BUILD_DIR}/bestbefore-agent.sysusers
     dst: /usr/lib/sysusers.d/bestbefore-agent.conf
+    file_info:
+      mode: 0644
+  - expand: true
+    src: ${BUILD_DIR}/lintian-overrides
+    dst: /usr/share/lintian/overrides/bestbefore-agent
     file_info:
       mode: 0644
   - expand: true

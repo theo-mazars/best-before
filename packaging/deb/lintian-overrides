@@ -1,0 +1,4 @@
+# Go programs are statically linked: the agent needs no library.
+bestbefore-agent: statically-linked-binary [usr/bin/bestbefore-agent]
+# Reading the list of installed packages, read-only, is what the agent is for.
+bestbefore-agent: uses-dpkg-database-directly [usr/bin/bestbefore-agent]

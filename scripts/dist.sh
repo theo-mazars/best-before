@@ -76,13 +76,25 @@ EOF
 	sed -e 's/^$/./' -e 's/^/ /' "$(go env GOROOT)/LICENSE"
 } >"$build/copyright"
 
+# The package's changelog points to the release notes.
+cat >"$build/changelog.yml" <<EOF
+- semver: ${version#v}
+  date: $(git log -1 --format=%cI)
+  packager: Theo Mazars <me@theomazars.com>
+  deb:
+    urgency: medium
+    distributions: [stable]
+  changes:
+    - note: "Best Before $version: see the release notes on GitHub."
+EOF
+
 for arch in amd64 arm64; do
 	dir=$build/linux-$arch
 	mkdir -p "$dir"
 	gobuild "$arch" "$dir/bestbefore-agent" ./cmd/bestbefore-agent
 	cp "$build/copyright" packaging/systemd/bestbefore-agent.service \
-		packaging/systemd/bestbefore-agent.timer \
-		packaging/deb/bestbefore-agent.sysusers "$dir/"
+		packaging/systemd/bestbefore-agent.timer packaging/deb/bestbefore-agent.sysusers \
+		packaging/deb/lintian-overrides "$dir/"
 	TZ=UTC touch -t "$stamp" "$dir"/*
 
 	# Named after the tag: Debian writes 0.1.0-rc.1 as 0.1.0~rc.1 inside
