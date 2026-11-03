@@ -94,20 +94,20 @@ func TestRecordReport(t *testing.T) {
 	s, _ := openTest(t)
 	now := time.Now()
 	s.CreateEnrolmentCode(ctx, [32]byte{1}, "", now, now.Add(time.Hour))
-	a, err := s.RedeemEnrolmentCode(ctx, [32]byte{1}, NewAgent{PublicKey: newKey(t), Hostname: "web-01"}, now)
+	a, err := s.RedeemEnrolmentCode(ctx, [32]byte{1}, NewAgent{PublicKey: newKey(t), Hostname: "web-01", AgentVersion: "v0.1.0"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := s.RecordReport(ctx, a.ID, 5, requestID(5), now, []byte(`{"n":5}`)); err != nil {
+	if err := s.RecordReport(ctx, a.ID, 5, requestID(5), now, "v0.1.0", []byte(`{"n":5}`)); err != nil {
 		t.Fatal(err)
 	}
 	for _, seq := range []uint64{5, 4} {
-		if err := s.RecordReport(ctx, a.ID, seq, requestID(9), now, []byte(`{}`)); !errors.Is(err, ErrStaleSequence) {
+		if err := s.RecordReport(ctx, a.ID, seq, requestID(9), now, "v9.9.9", []byte(`{}`)); !errors.Is(err, ErrStaleSequence) {
 			t.Errorf("sequence %d: got %v", seq, err)
 		}
 	}
-	if err := s.RecordReport(ctx, a.ID, 6, requestID(6), now, []byte(`{"n":6}`)); err != nil {
+	if err := s.RecordReport(ctx, a.ID, 6, requestID(6), now, "v0.1.1", []byte(`{"n":6}`)); err != nil {
 		t.Fatal(err)
 	}
 	body, err := s.LatestReport(ctx, a.ID)
@@ -115,14 +115,15 @@ func TestRecordReport(t *testing.T) {
 		t.Errorf("latest report %s, err %v", body, err)
 	}
 	got, _ := s.AgentByID(ctx, a.ID)
-	if got.LastSequence != 6 || !bytes.Equal(got.LastRequestID, requestID(6)) || got.LastReportAt == nil {
+	// The version follows accepted reports only: the agent was upgraded.
+	if got.LastSequence != 6 || !bytes.Equal(got.LastRequestID, requestID(6)) || got.LastReportAt == nil || got.AgentVersion != "v0.1.1" {
 		t.Errorf("agent after reports: %+v", got)
 	}
 
 	if err := s.RevokeAgent(ctx, a.ID, "", now); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordReport(ctx, a.ID, 7, requestID(7), now, []byte(`{}`)); !errors.Is(err, ErrStaleSequence) {
+	if err := s.RecordReport(ctx, a.ID, 7, requestID(7), now, "v0.1.0", []byte(`{}`)); !errors.Is(err, ErrStaleSequence) {
 		t.Errorf("report after revocation: got %v", err)
 	}
 	if err := s.RevokeAgent(ctx, a.ID, "", now); !errors.Is(err, ErrNotFound) {

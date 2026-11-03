@@ -16,7 +16,7 @@ func TestReplaceFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordReport(ctx, a.ID, 1, requestID(1), day1, []byte(`{}`)); err != nil {
+	if err := s.RecordReport(ctx, a.ID, 1, requestID(1), day1, "v0.1.0", []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	if r, _ := s.Report(ctx, a.ID); r.Matched || r.MatchedAt != nil {
@@ -56,7 +56,7 @@ func TestReplaceFindings(t *testing.T) {
 
 	// A newer report arrives while the old one is being matched: the late
 	// result is dropped, and the new report counts as not checked.
-	if err := s.RecordReport(ctx, a.ID, 2, requestID(2), day3, []byte(`{}`)); err != nil {
+	if err := s.RecordReport(ctx, a.ID, 2, requestID(2), day3, "v0.1.0", []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ReplaceFindings(ctx, a.ID, 1, day3, nil, nil, day3); err != nil {

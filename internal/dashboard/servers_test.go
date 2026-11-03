@@ -84,7 +84,7 @@ func TestOverviewAndServerPage(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(testServerReport())
-	if err := tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body); err != nil {
+	if err := tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body); err != nil {
 		t.Fatal(err)
 	}
 	// Received but not matched yet: never OK.
@@ -153,7 +153,7 @@ func TestThresholdAndAcceptedRisks(t *testing.T) {
 	r := testServerReport()
 	r.Host.APT.Upgradable = nil
 	body, _ := json.Marshal(r)
-	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body)
 	db := fakeDB{findings: []vulns.Finding{
 		{Target: vulns.TargetHost, Package: "openssl", Version: "3.0.13", Kind: vulns.KindPackage, Vulnerability: "CVE-2026-0001",
 			Severity: "critical", CVSS: 9.8, FixVersions: []string{"3.0.14"}},
@@ -241,7 +241,7 @@ func TestMatchingWaitsForDatabase(t *testing.T) {
 	key, _ := protocol.GenerateAgentKey()
 	a, _ := tw.store.RedeemEnrolmentCode(ctx, [32]byte{1}, store.NewAgent{PublicKey: key.Public(), Hostname: "web-01"}, tw.now)
 	body, _ := json.Marshal(testServerReport())
-	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body)
 
 	m := newMatching(fakeDB{notReady: true}, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 	m.match(ctx, a.ID)
@@ -261,7 +261,7 @@ func TestMatchingQueue(t *testing.T) {
 	m := newMatching(fakeDB{}, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 	go m.run(ctx)
 	body, _ := json.Marshal(testServerReport())
-	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body)
 	m.enqueue(a.ID)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -284,7 +284,7 @@ func TestUncheckedImageNeedsAttention(t *testing.T) {
 	r := testServerReport()
 	r.Host.APT.Upgradable = nil
 	body, _ := json.Marshal(r)
-	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body)
 
 	db := fakeDB{unchecked: map[string]string{testImage: "the vulnerability database has no security data for opensuse-leap 15.6"}}
 	newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now }).match(ctx, a.ID)
@@ -324,7 +324,7 @@ func TestWhatWasChecked(t *testing.T) {
 			OS: report.OS{ID: "opensuse-leap", Name: "openSUSE Leap 15.6"}, PackageManager: "rpm",
 			Packages: []report.InstalledPackage{{Name: "bash", Version: "4.4"}}}})
 	body, _ := json.Marshal(r)
-	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, body)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body)
 	db := fakeDB{unchecked: map[string]string{leap: "the vulnerability database has no security data for opensuse-leap 15.6"}}
 	newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now }).match(ctx, a.ID)
 

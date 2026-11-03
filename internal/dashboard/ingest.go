@@ -163,12 +163,15 @@ func (in *ingest) report(ctx context.Context, e *protocol.Envelope, raw []byte, 
 	if rep.SchemaVersion != report.SchemaVersion {
 		return reject("unsupported report schema version; update the agent or the dashboard")
 	}
+	if !printable(rep.AgentVersion, 64) {
+		return reject("invalid agent version")
+	}
 	body, err := json.Marshal(rep)
 	if err != nil {
 		return err
 	}
 
-	err = in.store.RecordReport(ctx, a.ID, e.Sequence, protocol.RequestID(raw), in.now(), body)
+	err = in.store.RecordReport(ctx, a.ID, e.Sequence, protocol.RequestID(raw), in.now(), rep.AgentVersion, body)
 	if errors.Is(err, store.ErrStaleSequence) {
 		return reject("sequence number already used, or agent revoked")
 	}
