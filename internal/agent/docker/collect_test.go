@@ -14,22 +14,30 @@ import (
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
+var (
+	containerWeb  = strings.Repeat("c1", 32)
+	containerDB   = strings.Repeat("c2", 32)
+	containerGone = strings.Repeat("d0", 32)
+	imageWeb      = "sha256:" + strings.Repeat("a1", 32)
+	imageDB       = "sha256:" + strings.Repeat("a2", 32)
+)
+
 // fakeEngine serves canned Docker API responses and records every method used.
 func fakeEngine(t *testing.T) (*httptest.Server, func() []string) {
 	t.Helper()
-	responses := map[string]string{
+	fixtures := map[string]string{
 		"/version":         `{"Version":"29.7.2","ApiVersion":"1.55"}`,
-		"/containers/json": `[{"Id":"c1"},{"Id":"c2"},{"Id":"gone"}]`,
-		"/containers/c1/json": `{"Id":"c1","Name":"/web","Image":"sha256:img1","Created":"2026-10-01T10:00:00.123456789Z",
+		"/containers/json": `[{"Id":"{c1}"},{"Id":"{c2}"},{"Id":"{gone}"}]`,
+		"/containers/{c1}/json": `{"Id":"{c1}","Name":"/web","Image":"{img1}","Created":"2026-10-01T10:00:00.123456789Z",
 			"Config":{"Image":"node:22-alpine","Labels":{"com.docker.compose.project":"shop","com.docker.compose.service":"web"}}}`,
-		"/containers/c2/json": `{"Id":"c2","Name":"/db","Image":"sha256:img2","Created":"2026-09-01T10:00:00Z",
+		"/containers/{c2}/json": `{"Id":"{c2}","Name":"/db","Image":"{img2}","Created":"2026-09-01T10:00:00Z",
 			"Config":{"Image":"mysql:8.0.36","Labels":null}}`,
-		"/images/sha256:img1/json": `{"Id":"sha256:img1","RepoTags":["node:22-alpine"],"RepoDigests":["node@sha256:aaa"],
+		"/images/{img1}/json": `{"Id":"{img1}","RepoTags":["node:22-alpine"],"RepoDigests":["node@sha256:aaa"],
 			"Created":"2026-09-20T00:00:00Z","Os":"linux","Architecture":"arm64",
 			"Config":{"Env":["PATH=/usr/local/bin","NODE_VERSION=22.11.0","YARN_VERSION=1.22.22"]}}`,
-		"/images/sha256:img2/json": `{"Id":"sha256:img2","RepoTags":null,"RepoDigests":null,"Created":"","Os":"linux","Architecture":"arm64"}`,
+		"/images/{img2}/json": `{"Id":"{img2}","RepoTags":null,"RepoDigests":null,"Created":"","Os":"linux","Architecture":"arm64"}`,
 		// img2 has no export: it was removed while being read.
-		"/images/sha256:img1/get": string(exportOf(t,
+		"/images/{img1}/get": string(exportOf(t,
 			map[string][]byte{"blobs/sha256/l1": tarOf(t,
 				entry{name: "etc/os-release", body: "ID=alpine\nVERSION_ID=3.20.3\n"},
 				entry{name: "lib/apk/db/installed", body: "P:musl\nV:1.2.5-r0\nA:aarch64\no:musl\n"},
@@ -37,6 +45,13 @@ func fakeEngine(t *testing.T) (*httptest.Server, func() []string) {
 			nil,
 			manifest{Layers: []string{"blobs/sha256/l1"}},
 		)),
+	}
+
+	// IDs have Docker's shape, as the client refuses any other.
+	ids := strings.NewReplacer("{c1}", containerWeb, "{c2}", containerDB, "{gone}", containerGone, "{img1}", imageWeb, "{img2}", imageDB)
+	responses := map[string]string{}
+	for path, body := range fixtures {
+		responses[ids.Replace(path)] = ids.Replace(body)
 	}
 
 	var mu sync.Mutex
@@ -83,7 +98,7 @@ func TestCollect(t *testing.T) {
 		t.Fatalf("containers: %+v", d.Containers)
 	}
 	web := d.Containers[1]
-	if web.Image != "node:22-alpine" || web.ImageID != "sha256:img1" ||
+	if web.Image != "node:22-alpine" || web.ImageID != imageWeb ||
 		web.ComposeProject != "shop" || web.ComposeService != "web" ||
 		!web.CreatedAt.Equal(time.Date(2026, 10, 1, 10, 0, 0, 123456789, time.UTC)) {
 		t.Errorf("web: %+v", web)
@@ -124,7 +139,7 @@ func TestCollectCache(t *testing.T) {
 	cache := mapCache{}
 
 	Collect(context.Background(), c, cache)
-	if len(cache) != 1 || cache["sha256:img1"] == nil {
+	if len(cache) != 1 || cache[imageWeb] == nil {
 		t.Fatalf("cache after the first run: %v", cache)
 	}
 	d := Collect(context.Background(), c, cache)
@@ -138,7 +153,7 @@ func TestCollectCache(t *testing.T) {
 			exports[call]++
 		}
 	}
-	if exports["GET /images/sha256:img1/get"] != 1 || exports["GET /images/sha256:img2/get"] != 2 {
+	if exports["GET /images/"+imageWeb+"/get"] != 1 || exports["GET /images/"+imageDB+"/get"] != 2 {
 		t.Errorf("exports: %v", exports)
 	}
 }

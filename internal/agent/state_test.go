@@ -70,16 +70,22 @@ func TestSetDocker(t *testing.T) {
 	if err := cfg.write(path); err != nil {
 		t.Fatal(err)
 	}
-	for _, setting := range []string{"tcp://127.0.0.1:2375", DockerOff, DockerAuto} {
-		if err := SetDocker(path, setting); err != nil {
+	previous := DockerAuto
+	for _, setting := range []string{"tcp://127.0.0.1:2375", "unix:///var/run/docker.sock", DockerOff, DockerAuto} {
+		was, err := SetDocker(path, setting)
+		if err != nil {
 			t.Fatal(err)
 		}
+		if was != previous {
+			t.Errorf("setting %s: previous %q, want %q", setting, was, previous)
+		}
+		previous = setting
 		got, err := LoadConfig(path)
 		if err != nil || got.Docker != setting || !got.DashboardKey.Equal(d.Public()) || got.DashboardTLSKey == nil {
 			t.Errorf("after setting %s: %+v, %v", setting, got, err)
 		}
 	}
-	if err := SetDocker(path, "socket"); err == nil {
+	if _, err := SetDocker(path, "socket"); err == nil {
 		t.Error("invalid setting accepted")
 	}
 }

@@ -3,8 +3,8 @@
 // status) and its running Docker containers, signs it, pushes it to the
 // dashboard over HTTPS, and exits.
 //
-// The agent must never open a listening socket, call a non-GET Docker API
-// endpoint, or treat anything in the dashboard's reply as an instruction.
+// The agent must never open a listening socket, call a Docker API endpoint
+// other than its five reads, or treat anything in the dashboard's reply as an instruction.
 package agent
 
 import (
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/theo-mazars/best-before/internal/agent/docker"
@@ -141,8 +142,12 @@ func collectDocker(ctx context.Context, setting string, cache docker.Cache) (*re
 		return nil, err
 	}
 	d := docker.Collect(ctx, client, cache)
-	if !d.Available && setting != host {
-		d.Error += "; Docker is installed but the agent cannot read its socket. Set up a socket proxy, then run: bestbefore-agent configure docker tcp://host:port (or: off)"
+	switch {
+	case d.Available:
+	case setting != host:
+		d.Error += "; Docker is installed but the agent cannot read its socket. Either set up a socket proxy and run: bestbefore-agent configure docker tcp://host:port, or give the agent the socket with: bestbefore-agent configure docker " + host + " (or: off)"
+	case strings.HasPrefix(host, "unix://") && strings.Contains(d.Error, "permission denied"):
+		d.Error += "; the agent's user, " + ServiceUser + ", must be in the socket's group: see bestbefore-agent configure docker " + host
 	}
 	return &d, nil
 }

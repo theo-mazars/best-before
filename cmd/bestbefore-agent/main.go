@@ -24,7 +24,8 @@ Usage:
   bestbefore-agent                      collect and send one report
   bestbefore-agent --dry-run            print the report instead of sending it
   bestbefore-agent enrol CODE           enrol this server with the code from the dashboard
-  bestbefore-agent configure docker X   change Docker access: tcp://host:port, off or auto
+  bestbefore-agent configure docker X   change Docker access: tcp://host:port, unix:///path,
+                                        off or auto
   bestbefore-agent configure dashboard URL
                                         use a new address of the same dashboard
   bestbefore-agent config example       print a commented configuration file
@@ -36,7 +37,8 @@ Options:
   --docker-host addr   override the docker setting: unix:///path or tcp://host:port
 
 Enrolment options:
-  --docker setting     tcp://host:port (socket proxy), off or auto; asked if omitted
+  --docker setting     tcp://host:port (socket proxy), unix:///path (socket), off or
+                       auto; asked if omitted
   --ca-file path       certificate authority of a reverse proxy using a private CA
                        (also with configure dashboard)
   --force              enrol again, with a new key
@@ -89,9 +91,14 @@ func main() {
 				ConfigPath: *configPath, StateDir: *stateDir, Out: os.Stdout,
 			})
 		}
+		if err == nil {
+			fmt.Print(agent.DockerAccessNote(agent.DockerAuto, setting))
+		}
 	case command == "configure docker" && len(positional) == 1:
-		if err = agent.SetDocker(*configPath, positional[0]); err == nil {
+		var previous string
+		if previous, err = agent.SetDocker(*configPath, positional[0]); err == nil {
 			fmt.Printf("Docker access set to %s. It applies from the next report.\n", positional[0])
+			fmt.Print(agent.DockerAccessNote(previous, positional[0]))
 		}
 	case command == "configure dashboard" && len(positional) == 1:
 		if err = agent.MoveDashboard(ctx, *configPath, positional[0], *caFile, os.Stdout); err == nil {
@@ -126,23 +133,23 @@ func parseInterspersed(fs *flag.FlagSet, args []string) []string {
 	}
 }
 
-// askDocker asks how to read Docker, on servers that have it. The agent's
-// service is never given the Docker socket, so the choice is a socket proxy
-// or nothing.
+// askDocker asks how to read Docker, on servers that have it: through a
+// socket proxy, through the socket, which is root-equivalent, or not at all.
 func askDocker() (string, error) {
 	if !docker.Present() {
 		return agent.DockerAuto, nil
 	}
 	if info, err := os.Stdin.Stat(); err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return "", errors.New("Docker is installed: pass --docker tcp://host:port (a socket proxy) or --docker off")
+		return "", errors.New("Docker is installed: pass --docker tcp://host:port (a socket proxy), --docker " + docker.DefaultHost + " (the socket) or --docker off")
 	}
-	fmt.Print(`Docker is installed on this server. The agent reads it through a socket proxy
-that only allows read endpoints: access to the Docker socket itself is
-equivalent to root, so the agent is never given it. See the README for a
-ready-made proxy configuration.
+	fmt.Print(`Docker is installed on this server. The agent only ever sends five read
+requests to Docker, and can reach it in one of two ways:
 
-  1) Use a socket proxy
-  2) Don't scan Docker (change it later with: bestbefore-agent configure docker)
+  1) Through a socket proxy that allows only those requests (recommended;
+     docs/agent.md has a ready-made one)
+  2) Through the Docker socket: simpler, but whoever can open the socket is
+     effectively root, so you will need to add the agent's user to its group
+  3) Don't scan Docker (change it later with: bestbefore-agent configure docker)
 
 Choice: `)
 	in := bufio.NewScanner(os.Stdin)
@@ -162,9 +169,22 @@ Choice: `)
 			}
 			return addr, nil
 		case "2":
+			fmt.Printf("Socket [%s]: ", docker.DefaultHost)
+			if !in.Scan() {
+				return "", errors.New("no socket entered")
+			}
+			addr := strings.TrimSpace(in.Text())
+			if addr == "" {
+				addr = docker.DefaultHost
+			}
+			if !strings.HasPrefix(addr, "unix:///") {
+				return "", errors.New("the socket must start with unix:///")
+			}
+			return addr, nil
+		case "3":
 			return agent.DockerOff, nil
 		}
-		fmt.Print("Choice (1 or 2): ")
+		fmt.Print("Choice (1, 2 or 3): ")
 	}
 	return "", errors.New("no choice made")
 }

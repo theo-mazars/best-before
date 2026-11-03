@@ -44,7 +44,9 @@ For unattended installs (Ansible, cloud-init), pass the Docker choice
 explicitly, as there is no one to ask:
 
 ```sh
-bestbefore-agent enrol bb1_… --docker tcp://127.0.0.1:2375    # or --docker off
+bestbefore-agent enrol bb1_… --docker tcp://127.0.0.1:2375    # a socket proxy
+bestbefore-agent enrol bb1_… --docker unix:///var/run/docker.sock    # the socket
+bestbefore-agent enrol bb1_… --docker off
 ```
 
 If the dashboard is behind a reverse proxy using a private certificate
@@ -84,26 +86,34 @@ The agent does not run `apt-get update`: it reads the package lists Ubuntu's
 
 ## Docker
 
-> [!IMPORTANT]
-> **Access to the Docker socket is equivalent to root on the host**, whatever
-> the agent does with it. The agent's service is therefore never given the
-> socket: it reads Docker through a socket proxy that allows only its read
-> requests.
-
-The agent only ever sends `GET` requests to Docker, and tests fail the build if
-that changes. The proxy enforces it outside the agent as well.
-
-[`packaging/socket-proxy/compose.yaml`](../packaging/socket-proxy/compose.yaml)
-runs [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy)
-with exactly the five requests the agent makes: no container logs, no files
-from running containers, no writes.
+The agent only ever reads from Docker. It sends exactly five requests, all
+`GET`: the engine's version, the running containers, each container's details,
+each image's details, and each image's export. Its HTTP client refuses
+anything else, including `GET` requests that are not reads, such as attaching
+to a container, and tests fail the build if that changes.
 
 To read an image's packages, the agent exports the image through the API, as
 `docker save` does, and reads the archive as it streams past. It keeps only
 the package lists and os-release, never writes the image to disk, and never
 pulls anything. Each image is read once and remembered by its ID in the
-agent's state directory, so the first run takes longest. It listens on the host's `127.0.0.1` only, so other
-containers cannot reach it.
+agent's state directory, so the first run takes longest.
+
+The agent can reach Docker in two ways. Choose one at enrolment, or later with
+`bestbefore-agent configure docker`.
+
+> [!IMPORTANT]
+> **Access to the Docker socket is equivalent to root on the host**, whatever
+> the agent does with it: anything running as the agent's user could use the
+> socket for more than the agent does. A socket proxy keeps that access out of
+> the agent's hands, and enforces the five requests outside the agent as well.
+
+### Through a socket proxy (recommended)
+
+[`packaging/socket-proxy/compose.yaml`](../packaging/socket-proxy/compose.yaml)
+runs [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy)
+with exactly the five requests the agent makes: no container logs, no files
+from running containers, no writes. It listens on the host's `127.0.0.1` only,
+so other containers cannot reach it.
 
 ```sh
 cd packaging/socket-proxy
@@ -111,7 +121,35 @@ DOCKER_GID=$(getent group docker | cut -d: -f3) docker compose up -d
 sudo bestbefore-agent configure docker tcp://127.0.0.1:2375
 ```
 
-To change your mind later, in either direction:
+### Through the Docker socket
+
+Without a proxy, the agent reads the socket directly. Its service runs as the
+unprivileged `bestbefore-agent` user, which cannot open the socket until you
+add it to the socket's group, `docker` on a standard install:
+
+```sh
+sudo bestbefore-agent configure docker unix:///var/run/docker.sock
+sudo usermod -aG docker bestbefore-agent
+```
+
+`configure` prints the right group for your socket, and never changes groups
+itself. The membership applies from the next run, without restarting anything,
+and is the only privilege the agent gets: the service keeps its other
+restrictions. A socket owned by the root group is not supported; use a proxy.
+
+To take the access back, switch to a proxy or `off`, then remove the user from
+the group (`configure` reminds you):
+
+```sh
+sudo gpasswd -d bestbefore-agent docker
+```
+
+If Docker is uninstalled and its group deleted, the membership disappears with
+it and the agent keeps running.
+
+### Changing your mind
+
+In either direction:
 
 ```sh
 sudo bestbefore-agent configure docker off     # stop looking at Docker
@@ -119,11 +157,13 @@ sudo bestbefore-agent configure docker auto    # report if Docker appears
 ```
 
 With `auto`, a server without Docker reports nothing about it, and a server
-where Docker appears later reports that it needs a proxy.
+where Docker appears later reads the default socket if the agent's user has
+been given it, or reports that it needs a proxy or the socket.
 
 ## The service
 
-The service runs as its own user with no privileges, a read-only view of the
+The service runs as its own user with no privileges (unless you give it the
+Docker socket's group, see [Docker](#docker)), a read-only view of the
 system except its state directory, and filtered system calls; systemd itself
 stops it from listening on the network. `systemd-analyze security
 bestbefore-agent.service` rates it 1.2 on a scale where lower is safer.
