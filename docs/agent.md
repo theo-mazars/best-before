@@ -18,9 +18,9 @@ sudo apt install ./bestbefore-agent_0.1.0_amd64.deb
 ```
 
 The package installs the agent, its systemd service and timer, and a
-`bestbefore-agent` system user. It starts nothing: the agent has nothing to do
-until it is enrolled. To update, install the new version's package the same
-way; enrolment and settings are kept.
+`bestbefore-agent` system user, and starts the daily timer. Until the agent is
+enrolled, its runs are skipped. To update, install the new version's package
+the same way; enrolment and settings are kept.
 
 To build the package yourself instead, see
 [Reproducing a release](releases.md#reproducing-a-release).
@@ -32,7 +32,6 @@ an hour. On the server:
 
 ```sh
 sudo bestbefore-agent enrol bb1_…
-sudo systemctl enable --now bestbefore-agent.timer
 sudo systemctl start bestbefore-agent.service    # first report now, not tomorrow
 ```
 
@@ -174,7 +173,17 @@ journalctl -u bestbefore-agent                  # what happened
 ```
 
 The timer runs daily, spread over an hour across servers, and catches up at
-boot if the server was off.
+boot if the server was off. To pause reports without removing the agent:
+
+```sh
+sudo systemctl disable --now bestbefore-agent.timer    # enable --now to resume
+```
+
+Upgrades and reinstallation never turn the timer on or off: a timer you
+disable stays disabled. Only a new installation, or one after `apt purge`,
+enables it. Version 0.1.0 left it disabled until enabled by hand, and
+upgrading keeps it that way: if `systemctl is-enabled bestbefore-agent.timer`
+says `disabled`, enable it as above.
 
 ## Files
 
