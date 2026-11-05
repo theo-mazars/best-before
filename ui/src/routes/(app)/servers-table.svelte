@@ -192,10 +192,7 @@
 						</Table.Cell>
 						<Table.Cell>
 							{#if s.rebootRequired}
-								<span class="flex items-center gap-1 text-amber-700 dark:text-amber-400">
-									<RotateCcwIcon class="size-3.5" />
-									Required
-								</span>
+								<span class="text-amber-700 dark:text-amber-400">Required</span>
 							{:else}
 								<span class="text-muted-foreground">—</span>
 							{/if}
