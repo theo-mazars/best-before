@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import { api, ApiError, type Session } from '#lib/api.js';
 	import OtpInput from '#lib/components/otp-input.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -10,7 +11,7 @@
 	import * as Field from '#lib/components/ui/field/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 
-	let step = $state<'password' | 'code'>('password');
+	let step = $state<'password' | 'code' | 'loading'>('password');
 	let email = $state('');
 	let password = $state('');
 	let code = $state('');
@@ -53,6 +54,7 @@
 		error = '';
 		try {
 			await api('POST', '/login/code', { code });
+			step = 'loading';
 			location.assign('/');
 			return;
 		} catch (err) {
@@ -104,7 +106,7 @@
 				<Button type="submit" disabled={busy}>Continue</Button>
 			</Field.Group>
 		</form>
-	{:else}
+	{:else if step === 'code'}
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
@@ -125,12 +127,16 @@
 					<Field.Label for="code" class="sr-only">Authenticator code</Field.Label>
 					<OtpInput id="code" large bind:value={code} oncomplete={submitCode} />
 				</Field.Field>
-				<Button type="submit" disabled={busy || code.length !== 6}>Log in</Button>
 				<Button type="button" variant="ghost" onclick={back}>
 					<ArrowLeftIcon />
 					Back
 				</Button>
 			</Field.Group>
 		</form>
+	{:else}
+		<div class="flex flex-col items-center gap-3 text-muted-foreground" role="status">
+			<LoaderIcon class="size-8 animate-spin" />
+			<p class="text-sm">Loading the dashboard…</p>
+		</div>
 	{/if}
 </div>
