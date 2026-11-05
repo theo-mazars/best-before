@@ -18,21 +18,24 @@ import (
 // in, and only include fixable ones the user sees and has not accepted: the
 // others are silent.
 type serverSummary struct {
-	ID              string     `json:"id"`
-	Hostname        string     `json:"hostname"`
-	Status          string     `json:"status"`
-	LastReportAt    *time.Time `json:"lastReportAt"`
-	Critical        int        `json:"critical"`
-	High            int        `json:"high"`
-	Medium          int        `json:"medium"`
-	KnownExploited  int        `json:"knownExploited"`
-	NoFixYet        int        `json:"noFixYet"`
-	Accepted        int        `json:"accepted"`
-	SecurityUpdates int        `json:"securityUpdates"`
-	Updates         int        `json:"updates"`
-	RebootRequired  bool       `json:"rebootRequired"`
-	Images          int        `json:"images"`
-	NotChecked      int        `json:"notChecked"`
+	ID             string     `json:"id"`
+	Hostname       string     `json:"hostname"`
+	Status         string     `json:"status"`
+	LastReportAt   *time.Time `json:"lastReportAt"`
+	Critical       int        `json:"critical"`
+	High           int        `json:"high"`
+	Medium         int        `json:"medium"`
+	KnownExploited int        `json:"knownExploited"`
+	// Emergencies are open vulnerabilities worth an alert, under the alert
+	// settings: they make the server critical.
+	Emergencies     int  `json:"emergencies"`
+	NoFixYet        int  `json:"noFixYet"`
+	Accepted        int  `json:"accepted"`
+	SecurityUpdates int  `json:"securityUpdates"`
+	Updates         int  `json:"updates"`
+	RebootRequired  bool `json:"rebootRequired"`
+	Images          int  `json:"images"`
+	NotChecked      int  `json:"notChecked"`
 	// Severities counts every vulnerability by severity: open ones count
 	// towards the status, muted ones have no fix, are below the user's
 	// threshold, are accepted or are in an old kernel.
@@ -68,9 +71,12 @@ const (
 
 // count counts vulnerabilities once per host or image, however many
 // packages they are in.
-func (s *serverSummary) count(findings []store.Finding, rs risks, min string, now time.Time) {
+func (s *serverSummary) count(findings []store.Finding, rs risks, min string, settings *store.AlertSettings, now time.Time) {
 	for _, group := range groupByCVE(findings) {
 		p, f := placeCVE(group, rs, min, now)
+		if emergency(group, rs, settings, now) {
+			s.Emergencies++
+		}
 		c := s.Severities[stripSeverity(f.Severity)]
 		if p == placeOpen {
 			c.Open++
@@ -152,11 +158,13 @@ func (s *serverSummary) status(agent string, rep *store.Report) string {
 		return statusStale
 	case rep == nil:
 		return statusWaiting
-	case s.Critical > 0 || s.KnownExploited > 0:
+	case s.Emergencies > 0:
 		return statusCritical
 	case !rep.Matched:
 		return statusUnchecked
-	case s.High > 0 || s.Medium > 0 || s.SecurityUpdates > 0 || s.RebootRequired || s.NotChecked > 0 || len(s.Problems) > 0:
+	// Something to do now. Vulnerabilities without an update to install
+	// stay in the counts, but are no call to act.
+	case s.SecurityUpdates > 0 || s.RebootRequired || s.NotChecked > 0 || len(s.Problems) > 0:
 		return statusAttention
 	}
 	return statusOK
@@ -181,13 +189,18 @@ func (w *web) overview(rw http.ResponseWriter, r *http.Request, u *store.User) {
 		w.apiFail(rw, r, err)
 		return
 	}
+	settings, err := w.store.AlertSettings(r.Context())
+	if err != nil {
+		w.apiFail(rw, r, err)
+		return
+	}
 	now := w.now()
 	servers := []serverSummary{}
 	for _, a := range agents {
 		if a.Revoked() {
 			continue
 		}
-		s, _, err := w.summary(r, &a, u, now)
+		s, _, err := w.summary(r, &a, u, settings, now)
 		if err != nil {
 			w.apiFail(rw, r, err)
 			return
@@ -213,7 +226,7 @@ type serverState struct {
 
 // summary loads what is known about one server, as user u sees it. The
 // state is nil before the first report arrives.
-func (w *web) summary(r *http.Request, a *store.Agent, u *store.User, now time.Time) (*serverSummary, *serverState, error) {
+func (w *web) summary(r *http.Request, a *store.Agent, u *store.User, settings *store.AlertSettings, now time.Time) (*serverSummary, *serverState, error) {
 	s := &serverSummary{ID: a.ID, Hostname: a.Hostname, LastReportAt: a.LastReportAt, Problems: []string{}, Severities: newSeverities()}
 	rep, err := w.store.Report(r.Context(), a.ID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -235,7 +248,7 @@ func (w *web) summary(r *http.Request, a *store.Agent, u *store.User, now time.T
 	}
 	s.read(st.body)
 	s.notChecked(rep, st.body)
-	s.count(st.findings, st.risks, u.MinSeverity, now)
+	s.count(st.findings, st.risks, u.MinSeverity, settings, now)
 	s.Status = s.status(agentStatus(a, now, w.cfg.StaleAfter), rep)
 	return s, st, nil
 }

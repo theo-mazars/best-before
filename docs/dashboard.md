@@ -195,9 +195,22 @@ check** rather than passing for clean; it does not change the server's
 status. A runtime whose variable gives no precise version (`REDIS_VERSION=7`)
 is listed as not checked.
 
-Only vulnerabilities **with a fix available** count towards a server's status.
-Those without one are listed on the server's page, greyed out and marked
-**No fix yet**, and count once a fix is published.
+Each server has one status, for what there is to do now:
+
+- **Critical:** an open vulnerability worth an emergency alert, as set under
+  **What is worth sending** (by default: known exploited, or CVSS 9.0 or
+  more, with a fix available). The status and the alerts follow the same rule.
+- **Needs attention:** security updates to install, a reboot required, or a
+  gap: a report with errors, or an image that could not be checked.
+- **OK:** nothing to do now. Other vulnerabilities, such as a medium one with
+  no update offered yet, still show in the counts but do not change it.
+- **Stale**, **Waiting** and **Not checked**: no recent report, none yet, or
+  not checked against the vulnerability database yet. While the latest report
+  waits to be checked, the server's page shows the previous vulnerabilities,
+  dimmed, with a note.
+
+Vulnerabilities without a fix are listed on the server's page, greyed out and
+marked **No fix yet**; they count once a fix is published.
 
 A vulnerability counts once on the host, and once in each image, whatever the
 number of packages it is in there: openssl and libssl3, or the packages of

@@ -97,6 +97,21 @@ func groupByCVE(fs []store.Finding) [][]store.Finding {
 	return out
 }
 
+// emergency says whether a vulnerability on a host or image is an open
+// emergency, as alerts see it: whatever the user's threshold, unless
+// accepted, and not in an old kernel.
+func emergency(group []store.Finding, rs risks, s *store.AlertSettings, now time.Time) bool {
+	if rs.active(&group[0], now) != nil {
+		return false
+	}
+	for i := range group {
+		if !group[i].OldKernel && isEmergency(&group[i], s) {
+			return true
+		}
+	}
+	return false
+}
+
 // placeUrgency orders places, most urgent first.
 var placeUrgency = map[int]int{placeOpen: 0, placeNoFix: 1, placeBelow: 2, placeAccepted: 3, placeOldKernel: 4}
 

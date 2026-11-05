@@ -16,6 +16,7 @@
 	let {
 		serverId,
 		pkg,
+		covered,
 		cve,
 		limits,
 		onclose,
@@ -23,6 +24,8 @@
 	}: {
 		serverId: string;
 		pkg: PackageRow;
+		// covered are the packages the decision applies to, pkg included.
+		covered: PackageRow[];
 		cve: Cve;
 		limits: ServerPage['risk'];
 		onclose: () => void;
@@ -76,7 +79,7 @@
 			<Dialog.Title>Accept {cve.id}</Dialog.Title>
 			<Dialog.Description class="flex flex-wrap items-center gap-2">
 				<WhereLabel where={pkg.where} />
-				<span>{pkg.package} {pkg.version}</span>
+				<span>{covered.map((p) => `${p.package} ${p.version}`).join(', ')}</span>
 			</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={submit}>

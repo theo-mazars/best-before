@@ -69,14 +69,15 @@ func TestOldKernelIsQuiet(t *testing.T) {
 		t.Fatalf("findings: %+v, %v", fs, err)
 	}
 	s := &serverSummary{Severities: map[string]*severityCount{"critical": {}}}
-	s.count(fs, risks{}, "low", at.now)
+	settings, _ := at.store.AlertSettings(at.ctx)
+	s.count(fs, risks{}, "low", settings, at.now)
 	if s.Critical+s.KnownExploited != 0 || *s.Severities["critical"] != (severityCount{Muted: 1}) {
 		t.Errorf("summary: %+v, critical %+v", s, s.Severities["critical"])
 	}
 	if got := at.check(); len(got) != 0 {
 		t.Errorf("alerted: %v", titles(got))
 	}
-	settings, _ := at.store.AlertSettings(at.ctx)
+	settings, _ = at.store.AlertSettings(at.ctx)
 	d, err := at.al.buildDigest(at.ctx, settings, at.now.Add(-7*24*time.Hour), at.now)
 	if err != nil || len(d.Emergencies)+len(d.New)+len(d.Accepted) != 0 {
 		t.Errorf("digest: %+v, %v", d, err)
@@ -143,7 +144,8 @@ func TestCountedPerVulnerability(t *testing.T) {
 
 	fs, _ := loadFindings(at.ctx, at.store, at.agent.ID)
 	s := &serverSummary{Severities: newSeverities()}
-	s.count(fs, risks{}, "low", at.now)
+	settings, _ := at.store.AlertSettings(at.ctx)
+	s.count(fs, risks{}, "low", settings, at.now)
 	if s.Critical != 1 || s.NoFixYet != 0 || *s.Severities["critical"] != (severityCount{Open: 1}) {
 		t.Errorf("summary: %+v, critical %+v", s, s.Severities["critical"])
 	}
@@ -156,7 +158,7 @@ func TestCountedPerVulnerability(t *testing.T) {
 	if text := got[0]["text"]; text != "CVE-2026-7000 in linux-modules-6.8.0-60-generic 1 (host): critical, CVSS 9.8, fixed in 2" {
 		t.Errorf("text: %q", text)
 	}
-	settings, _ := at.store.AlertSettings(at.ctx)
+	settings, _ = at.store.AlertSettings(at.ctx)
 	d, err := at.al.buildDigest(at.ctx, settings, at.now.Add(-7*24*time.Hour), at.now)
 	if err != nil || len(d.Emergencies) != 1 || len(d.Emergencies[0].Findings) != 1 {
 		t.Errorf("digest: %+v, %v", d, err)

@@ -25,7 +25,7 @@
 			value: sum((s) => (s.status === 'OK' ? 0 : 1)),
 			of: servers.length
 		},
-		{ label: 'Critical', value: sum((s) => s.critical) },
+		{ label: 'To fix now', value: sum((s) => s.emergencies) },
 		{ label: 'Known exploited', value: sum((s) => s.knownExploited) },
 		{ label: 'Security updates', value: sum((s) => s.securityUpdates) },
 		{ label: 'Reboots pending', value: sum((s) => (s.rebootRequired ? 1 : 0)) }

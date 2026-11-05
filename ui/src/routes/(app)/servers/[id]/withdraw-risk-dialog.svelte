@@ -7,12 +7,15 @@
 	let {
 		serverId,
 		pkg,
+		covered,
 		cve,
 		onclose,
 		ondone
 	}: {
 		serverId: string;
 		pkg: PackageRow;
+		// covered are the packages the decision applies to, pkg included.
+		covered: PackageRow[];
 		cve: Cve;
 		onclose: () => void;
 		ondone: () => Promise<unknown>;
@@ -47,7 +50,9 @@
 			<AlertDialog.Description>
 				<span class="flex flex-wrap items-center gap-2">
 					<WhereLabel where={pkg.where} />
-					<span>{pkg.package} {pkg.version} · it counts again at once.</span>
+					<span
+						>{covered.map((p) => `${p.package} ${p.version}`).join(', ')} · it counts again at once.</span
+					>
 				</span>
 			</AlertDialog.Description>
 		</AlertDialog.Header>

@@ -15,7 +15,7 @@
 	import StatusBadge from '#lib/components/status-badge.svelte';
 	import TimeAgo from '#lib/components/time-ago.svelte';
 	import type { ServerSummary } from '#lib/api.js';
-	import { statuses, statusLook, statusRank, worstIssue } from '#lib/status.js';
+	import { statuses, statusLook, statusRank, statusRule, worstIssue } from '#lib/status.js';
 
 	let { servers }: { servers: ServerSummary[] } = $props();
 
@@ -27,10 +27,10 @@
 	let sort = $state<{ key: SortKey; desc: boolean }>({ key: 'status', desc: false });
 	let pageIndex = $state(0);
 
-	// vulnRank orders by what needs fixing first: known exploited, then
-	// critical, high and medium.
+	// vulnRank orders by what needs fixing first: emergencies, known
+	// exploited, then critical, high and medium.
 	function vulnRank(s: ServerSummary) {
-		return [s.knownExploited, s.critical, s.high, s.medium];
+		return [s.emergencies, s.knownExploited, s.critical, s.high, s.medium];
 	}
 
 	function compare(a: ServerSummary, b: ServerSummary, key: SortKey): number {
@@ -153,7 +153,12 @@
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
-					<Table.Head>{@render sortable('status', 'Status')}</Table.Head>
+					<Table.Head>
+						<span class="flex items-center gap-1">
+							{@render sortable('status', 'Status')}
+							<Hint text={statusRule} />
+						</span>
+					</Table.Head>
 					<Table.Head>{@render sortable('hostname', 'Server')}</Table.Head>
 					<Table.Head>Issue</Table.Head>
 					<Table.Head>

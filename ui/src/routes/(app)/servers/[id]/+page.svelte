@@ -21,6 +21,7 @@
 	import { clock } from '#lib/clock.svelte.js';
 	import { formatUptime, formatUTC, timeAgo } from '#lib/date.js';
 	import { noFilter, type PackageFilter } from '#lib/packages.js';
+	import { statusRule } from '#lib/status.js';
 	import AcceptRiskDialog from './accept-risk-dialog.svelte';
 	import ImagesList from './images-list.svelte';
 	import PackagesTable from './packages-table.svelte';
@@ -49,6 +50,16 @@
 	let withdrawing = $state<{ pkg: PackageRow; cve: Cve } | null>(null);
 
 	const refresh = () => invalidate('app:server');
+	// The latest report waits for matching: what is shown is older.
+	const pending = $derived(v?.report ? !v.report.matched : false);
+
+	// covering lists the packages a risk decision applies to: every one with
+	// the vulnerability on the same host or image.
+	function covering(d: { pkg: PackageRow; cve: Cve }) {
+		return (v?.packages ?? []).filter(
+			(p) => p.target === d.pkg.target && p.cves.some((c) => c.id === d.cve.id)
+		);
+	}
 	// Vulnerabilities count once per host or image, as on the overview.
 	const cveCount = $derived(
 		v ? Object.values(v.server.severities).reduce((n, c) => n + c.open + c.muted, 0) : 0
@@ -57,9 +68,9 @@
 	const stats = $derived(
 		v
 			? [
-					{ label: 'Critical', value: v.server.critical },
+					{ label: 'To fix now', value: v.server.emergencies },
 					{ label: 'Known exploited', value: v.server.knownExploited },
-					{ label: 'High', value: v.server.high },
+					{ label: 'Critical', value: v.server.critical },
 					{ label: 'Security updates', value: v.server.securityUpdates }
 				]
 			: []
@@ -136,7 +147,9 @@
 				<div class="grid grid-cols-2 gap-4 md:grid-cols-3">
 					<Card.Root size="sm">
 						<Card.Header>
-							<Card.Description>Status</Card.Description>
+							<Card.Description class="flex items-center gap-1">
+								Status <Hint text={statusRule} />
+							</Card.Description>
 							<Card.Title><StatusBadge status={v.server.status} /></Card.Title>
 						</Card.Header>
 					</Card.Root>
@@ -202,6 +215,20 @@
 				</Alert.Root>
 			{/if}
 
+			{#if pending}
+				<Alert.Root>
+					<HourglassIcon />
+					<Alert.Title>
+						{#if v.report?.matchedAt}
+							Showing the vulnerabilities found {timeAgo(v.report.matchedAt, clock.now)}: the latest
+							report, received {timeAgo(v.report.receivedAt, clock.now)}, isn't checked yet.
+						{:else}
+							The report isn't checked against the vulnerability database yet.
+						{/if}
+					</Alert.Title>
+				</Alert.Root>
+			{/if}
+
 			<Tabs.Root value={tab} onValueChange={(t) => show(t as Tab)}>
 				<Tabs.List>
 					<Tabs.Trigger value="vulnerabilities">
@@ -217,7 +244,7 @@
 						<span class="text-xs text-muted-foreground tabular-nums">{v.images.length}</span>
 					</Tabs.Trigger>
 				</Tabs.List>
-				<Tabs.Content value="vulnerabilities" class="pt-2">
+				<Tabs.Content value="vulnerabilities" class={pending ? 'pt-2 opacity-60' : 'pt-2'}>
 					<PackagesTable
 						packages={v.packages}
 						bind:filter
@@ -228,7 +255,7 @@
 				<Tabs.Content value="updates" class="pt-2">
 					<UpdatesTable updates={v.upgradable} listsPublishedAt={v.host.listsPublishedAt} />
 				</Tabs.Content>
-				<Tabs.Content value="images" class="pt-2">
+				<Tabs.Content value="images" class={pending ? 'pt-2 opacity-60' : 'pt-2'}>
 					<ImagesList
 						images={v.images}
 						onshow={(where) => {
@@ -244,6 +271,7 @@
 			<AcceptRiskDialog
 				serverId={v.server.id}
 				pkg={accepting.pkg}
+				covered={covering(accepting)}
 				cve={accepting.cve}
 				limits={v.risk}
 				onclose={() => (accepting = null)}
@@ -254,6 +282,7 @@
 			<WithdrawRiskDialog
 				serverId={v.server.id}
 				pkg={withdrawing.pkg}
+				covered={covering(withdrawing)}
 				cve={withdrawing.cve}
 				onclose={() => (withdrawing = null)}
 				ondone={refresh}

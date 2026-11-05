@@ -419,3 +419,34 @@ func TestWhatWasChecked(t *testing.T) {
 		t.Errorf("leap image: %+v", img)
 	}
 }
+
+// A server is critical for an open emergency, as the alert settings define
+// it, needs attention when there is something to do now, and is OK
+// otherwise, whatever vulnerabilities have no update to install.
+func TestStatusRule(t *testing.T) {
+	settings := &store.AlertSettings{EmergencyKnownExploited: true}
+	cvss := 9.0
+	settings.EmergencyMinCVSS = &cvss
+	rep := &store.Report{Matched: true}
+	finding := func(sev string, score float64, kev bool) store.Finding {
+		return store.Finding{Target: vulns.TargetHost, Package: "p", Kind: vulns.KindPackage, Vulnerability: "CVE-" + sev,
+			Severity: sev, CVSS: score, KnownExploited: kev, FixVersions: []string{"2"}}
+	}
+	for name, tc := range map[string]struct {
+		findings []store.Finding
+		updates  int
+		want     string
+	}{
+		"critical by score":      {[]store.Finding{finding("critical", 9.8, false)}, 0, statusCritical},
+		"known exploited":        {[]store.Finding{finding("low", 3, true)}, 0, statusCritical},
+		"critical below trigger": {[]store.Finding{finding("critical", 8.1, false)}, 0, statusOK},
+		"high and medium":        {[]store.Finding{finding("high", 7.5, false), finding("medium", 5, false)}, 0, statusOK},
+		"security update":        {[]store.Finding{finding("medium", 5, false)}, 1, statusAttention},
+	} {
+		s := &serverSummary{Severities: newSeverities(), SecurityUpdates: tc.updates}
+		s.count(tc.findings, risks{}, "low", settings, time.Now())
+		if got := s.status("", rep); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+	}
+}

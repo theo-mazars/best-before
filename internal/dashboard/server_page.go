@@ -167,8 +167,13 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 		w.apiFail(rw, r, err)
 		return
 	}
+	settings, err := w.store.AlertSettings(r.Context())
+	if err != nil {
+		w.apiFail(rw, r, err)
+		return
+	}
 	now := w.now()
-	s, st, err := w.summary(r, a, u, now)
+	s, st, err := w.summary(r, a, u, settings, now)
 	if err != nil {
 		w.apiFail(rw, r, err)
 		return

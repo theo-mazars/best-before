@@ -44,6 +44,7 @@ export type ServerSummary = {
 	high: number;
 	medium: number;
 	knownExploited: number;
+	emergencies: number;
 	noFixYet: number;
 	accepted: number;
 	securityUpdates: number;
