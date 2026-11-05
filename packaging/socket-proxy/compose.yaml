@@ -24,7 +24,8 @@ services:
       # Patterns are anchored (^…$) by the proxy. These are the only requests
       # the agent makes: no container logs, no files from running containers,
       # no writes. /images/…/get exports an image, from which the agent keeps
-      # only the package lists.
+      # only the package lists. The agent's own allow-list is the same, and a
+      # test keeps the two identical.
       - '-allowGET=(/version|/containers/json|/containers/[0-9a-f]{64}/json|/images/sha256:[0-9a-f]{64}/(json|get))'
       - '-watchdoginterval=3600'
       - '-stoponwatchdog'

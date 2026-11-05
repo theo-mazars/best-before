@@ -69,3 +69,16 @@ func TestDockerSection(t *testing.T) {
 		})
 	}
 }
+
+func TestDockerAccessNote(t *testing.T) {
+	missing := "unix://" + filepath.Join(t.TempDir(), "docker.sock")
+	if note := DockerAccessNote(DockerAuto, missing); !strings.Contains(note, "cannot be read yet") {
+		t.Errorf("missing socket: %q", note)
+	}
+	// Nothing to say when the socket is not involved, or when auto finds none.
+	for _, tt := range [][2]string{{DockerAuto, DockerOff}, {missing, "tcp://127.0.0.1:2375"}, {DockerOff, "tcp://127.0.0.1:2375"}} {
+		if note := DockerAccessNote(tt[0], tt[1]); note != "" && !strings.Contains(note, "gpasswd -d") {
+			t.Errorf("%s to %s: %q", tt[0], tt[1], note)
+		}
+	}
+}

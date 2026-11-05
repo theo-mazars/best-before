@@ -1,13 +1,15 @@
 // Package docker reads running containers and their images from the Docker
 // Engine API.
 //
-// It only ever issues GET requests: the client exposes no other method, its
-// transport refuses anything else, and getonly_test.go fails the build if
-// this package mentions another HTTP method.
+// It only ever reads: the client exposes no method but GET, its transport
+// refuses any other method and any path outside the five read endpoints the
+// agent uses (the same list as the socket proxy in packaging/socket-proxy),
+// and getonly_test.go fails the build if this package mentions another HTTP
+// method.
 //
 // This does not make access to the Docker socket safe. Whoever can reach the
 // socket is effectively root on the host, whatever this code does with it;
-// see the README for running the agent behind a GET-only socket proxy.
+// see docs/agent.md for the choice between a socket proxy and the socket.
 package docker
 
 import (
@@ -20,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -156,12 +159,26 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	return nil
 }
 
-// getOnly refuses every request that is not a GET, as a last line of defence.
+// allowedPaths are the only requests the agent makes, by the IDs Docker
+// returns: its version, the running containers, and each one's details and
+// image. Some GET endpoints are not reads (attaching to a container over a
+// WebSocket) or read too much (logs, files from containers), so GET alone is
+// not enough when the agent is given the socket itself. The socket proxy's
+// compose.yaml allows the same list; getonly_test.go keeps them in step.
+const allowedPaths = `/version|/containers/json|/containers/[0-9a-f]{64}/json|/images/sha256:[0-9a-f]{64}/(json|get)`
+
+var allowedPath = regexp.MustCompile(`^(` + allowedPaths + `)$`)
+
+// getOnly refuses every request that is not a GET of an allowed path, with no
+// query, as a last line of defence.
 type getOnly struct{ next http.RoundTripper }
 
 func (g getOnly) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet {
 		return nil, fmt.Errorf("refusing %s %s: the agent only reads from Docker", req.Method, req.URL.Path)
+	}
+	if path := req.URL.EscapedPath(); !allowedPath.MatchString(path) || req.URL.RawQuery != "" {
+		return nil, fmt.Errorf("refusing GET %s: not one of the read requests the agent makes", req.URL.RequestURI())
 	}
 	return g.next.RoundTrip(req)
 }

@@ -47,9 +47,10 @@ const (
 	selectAllAgents  = selectAgents + ` ORDER BY hostname, enrolled_at`
 	revokeAgent      = `UPDATE agents SET revoked_at = ?, revoked_by = ? WHERE id = ? AND revoked_at IS NULL`
 
-	// One statement, so two concurrent reports cannot both be accepted.
-	advanceAgent = `UPDATE agents SET last_sequence = ?, last_request_id = ?, last_report_at = ?
-		WHERE id = ? AND last_sequence < ? AND revoked_at IS NULL`
+	// One statement, so two concurrent reports cannot both be accepted. The
+	// version changes when the agent is upgraded.
+	advanceAgent = `UPDATE agents SET last_sequence = ?, last_request_id = ?, last_report_at = ?,
+		agent_version = ? WHERE id = ? AND last_sequence < ? AND revoked_at IS NULL`
 	upsertLatestReport = `INSERT INTO latest_reports (agent_id, received_at, sequence, body) VALUES (?, ?, ?, ?)
 		ON CONFLICT (agent_id) DO UPDATE SET received_at = excluded.received_at,
 		sequence = excluded.sequence, body = excluded.body`
@@ -127,11 +128,12 @@ func (s *Store) Agents(ctx context.Context) ([]Agent, error) {
 	return agents, rows.Err()
 }
 
-// RecordReport stores an agent's latest report. It fails with
-// ErrStaleSequence on a replayed sequence number or a revoked agent.
-func (s *Store) RecordReport(ctx context.Context, agentID string, seq uint64, requestID []byte, now time.Time, body []byte) error {
+// RecordReport stores an agent's latest report, and the version of the agent
+// that sent it. It fails with ErrStaleSequence on a replayed sequence number
+// or a revoked agent.
+func (s *Store) RecordReport(ctx context.Context, agentID string, seq uint64, requestID []byte, now time.Time, agentVersion string, body []byte) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, advanceAgent, seq, requestID, unix(now), agentID, seq)
+		res, err := tx.ExecContext(ctx, advanceAgent, seq, requestID, unix(now), agentVersion, agentID, seq)
 		if err != nil {
 			return err
 		}

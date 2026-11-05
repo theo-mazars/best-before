@@ -72,7 +72,7 @@ func checkDockerSetting(s string) error {
 	case s == DockerAuto, s == DockerOff, strings.HasPrefix(s, "unix:///"), strings.HasPrefix(s, "tcp://"):
 		return nil
 	}
-	return errors.New("docker must be tcp://host:port, off, auto or unix:///path")
+	return errors.New("docker must be tcp://host:port, unix:///path, off or auto")
 }
 
 // write saves the configuration, replacing any previous one atomically.
@@ -103,15 +103,17 @@ docker = %s
 	return os.Rename(tmp, path)
 }
 
-// SetDocker changes the docker setting of an enrolled agent.
-func SetDocker(path, setting string) error {
+// SetDocker changes the docker setting of an enrolled agent, and returns the
+// previous one.
+func SetDocker(path, setting string) (string, error) {
 	if err := checkDockerSetting(setting); err != nil {
-		return err
+		return "", err
 	}
 	c, err := LoadConfig(path)
 	if err != nil {
-		return err
+		return "", err
 	}
+	previous := c.Docker
 	c.Docker = setting
-	return c.write(path)
+	return previous, c.write(path)
 }

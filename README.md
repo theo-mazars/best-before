@@ -34,7 +34,7 @@ Best Before watches the system, not your applications: the programs inside an im
 - **Enrolment is a one-time code** created in the dashboard and pasted on the server. It carries the dashboard's identity, so the agent checks who it talks to before sending anything, then pins it.
 - **Reports are encrypted to the dashboard and signed by the agent**, with replay protection, independently of TLS: a reverse proxy only ever sees ciphertext. The dashboard treats every report as untrusted input.
 - **The dashboard can only answer "accepted" or "rejected".** It cannot send instructions, configuration or updates to agents.
-- **Docker is read through a socket proxy** allowing only the agent's read requests, never through the socket itself.
+- **Docker is only ever read**: the agent refuses any request but its five reads, and can be put behind a socket proxy enforcing the same list. Giving it the socket itself instead is possible, as an explicit, root-equivalent choice.
 - **Logins need a password and an authenticator app.**
 
 ## Guides

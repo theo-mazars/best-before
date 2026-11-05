@@ -13,7 +13,8 @@ import (
 	"testing"
 )
 
-// The agent must only ever issue GET requests to the Docker API (plan §4.3).
+// The agent must only ever issue GET requests to the Docker API (plan §4.3),
+// and only for the reads it needs, as it may be given the socket itself.
 // These tests enforce that three ways: at runtime against a fake engine, at
 // the transport level, and by inspecting this package's source.
 
@@ -51,6 +52,52 @@ func TestTransportRefusesNonGET(t *testing.T) {
 	}
 	if calls := methods(); len(calls) != 0 {
 		t.Errorf("requests reached the engine: %v", calls)
+	}
+}
+
+// TestTransportRefusesOtherPaths checks GET requests that are not the
+// agent's reads: some act on containers, others read what the agent must not.
+func TestTransportRefusesOtherPaths(t *testing.T) {
+	srv, methods := fakeEngine(t)
+	c := newTestClient(t, srv)
+
+	for _, path := range []string{
+		"/containers/" + containerWeb + "/attach/ws?stream=1&stdin=1", // writes to the container
+		"/containers/" + containerWeb + "/logs?stdout=1",
+		"/containers/" + containerWeb + "/archive?path=/etc/shadow",
+		"/containers/" + containerWeb + "/export",
+		"/containers/json?all=1",
+		"/containers/web/json",
+		"/images/" + imageWeb + "/../../containers/" + containerWeb + "/logs",
+		"/images/" + imageWeb + "%2F..%2F..%2Fsecrets/json",
+		"/v1.47/containers/json",
+		"/secrets",
+		"/version/",
+	} {
+		req, err := http.NewRequest(http.MethodGet, c.base+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp, err := c.http.Do(req); err == nil {
+			resp.Body.Close()
+			t.Errorf("GET %s was allowed through", path)
+		}
+	}
+	if calls := methods(); len(calls) != 0 {
+		t.Errorf("requests reached the engine: %v", calls)
+	}
+}
+
+// TestProxyAllowsSamePaths keeps the socket proxy's allow-list identical to
+// the client's, so that both ways of reading Docker allow the same requests.
+func TestProxyAllowsSamePaths(t *testing.T) {
+	compose, err := os.ReadFile(filepath.Join("..", "..", "..", "packaging", "socket-proxy", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "'-allowGET=(" + allowedPaths + ")'"
+	if !strings.Contains(string(compose), want) {
+		t.Errorf("compose.yaml does not contain %s", want)
 	}
 }
 

@@ -113,7 +113,7 @@ func (at *alertTest) addHook(emergencies, digest bool) {
 func (at *alertTest) report(seq uint64, findings ...vulns.Finding) {
 	at.t.Helper()
 	body, _ := json.Marshal(testServerReport())
-	if err := at.store.RecordReport(at.ctx, at.agent.ID, seq, bytes.Repeat([]byte{byte(seq)}, 32), at.now, body); err != nil {
+	if err := at.store.RecordReport(at.ctx, at.agent.ID, seq, bytes.Repeat([]byte{byte(seq)}, 32), at.now, "v0.1.0", body); err != nil {
 		at.t.Fatal(err)
 	}
 	m := newMatching(fakeDB{findings: findings}, at.store, at.al.log, func() time.Time { return at.now })
