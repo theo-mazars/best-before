@@ -21,8 +21,10 @@ type Finding struct {
 	FixVersions    []string // empty when no fix exists
 	KnownExploited bool
 	URL            string
-	FirstSeenAt    time.Time
-	FixableSince   *time.Time
+	// OldKernel is set for a kernel package installed but not running.
+	OldKernel    bool
+	FirstSeenAt  time.Time
+	FixableSince *time.Time
 }
 
 func (f *Finding) Fixable() bool { return len(f.FixVersions) > 0 }
@@ -52,12 +54,12 @@ const (
 		FROM findings WHERE agent_id = ?`
 	deleteFindings = `DELETE FROM findings WHERE agent_id = ?`
 	insertFinding  = `INSERT INTO findings (agent_id, target, package, version, kind, vulnerability, severity,
-		cvss, fix_versions, known_exploited, url, first_seen_at, fixable_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		cvss, fix_versions, known_exploited, url, old_kernel, first_seen_at, fixable_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	markMatched = `UPDATE latest_reports SET matched_sequence = ?, matched_at = ?, matched_db_built = ?,
 		unchecked = ? WHERE agent_id = ? AND sequence = ?`
 	selectFindings = `SELECT target, package, version, kind, vulnerability, severity, cvss, fix_versions,
-		known_exploited, url, first_seen_at, fixable_since FROM findings WHERE agent_id = ?
+		known_exploited, url, old_kernel, first_seen_at, fixable_since FROM findings WHERE agent_id = ?
 		ORDER BY fix_versions = '', known_exploited DESC,
 		CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3
 			WHEN 'negligible' THEN 4 ELSE 5 END, cvss DESC, package, vulnerability`
@@ -192,7 +194,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, agentID string, seq uint64,
 			}
 			_, err := tx.ExecContext(ctx, insertFinding, agentID, f.Target, f.Package, f.Version, f.Kind,
 				f.Vulnerability, f.Severity, f.CVSS, strings.Join(f.FixVersions, ", "), f.KnownExploited,
-				f.URL, h.firstSeen, fixableSince)
+				f.URL, f.OldKernel, h.firstSeen, fixableSince)
 			if err != nil {
 				return err
 			}
@@ -216,7 +218,7 @@ func (s *Store) Findings(ctx context.Context, agentID string) ([]Finding, error)
 		var firstSeen int64
 		var fixable sql.NullInt64
 		if err := rows.Scan(&f.Target, &f.Package, &f.Version, &f.Kind, &f.Vulnerability, &f.Severity, &f.CVSS,
-			&fixes, &f.KnownExploited, &f.URL, &firstSeen, &fixable); err != nil {
+			&fixes, &f.KnownExploited, &f.URL, &f.OldKernel, &firstSeen, &fixable); err != nil {
 			return nil, err
 		}
 		if fixes != "" {

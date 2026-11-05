@@ -262,16 +262,17 @@ A few things to know:
 ## Accepted risks and your threshold
 
 Some vulnerabilities do not matter on your servers: the vulnerable feature is
-off, or the service is only reachable over your VPN. Click **Accept** next to
-one on a server's page, say why, and choose until when (90 days by default, a
-year at most). Until then, it:
+off, or the service is only reachable over your VPN. Expand its package on a
+server's page, click **Accept** next to it, say why, and choose until when (90
+days by default, a year at most). Until then, it:
 
 - does not count towards the server's status;
 - raises no emergency, and closes one already open;
 - is left out of the digest, until its expiry is a week away.
 
-It stays listed under **Accepted risks** on the server's page, with the
-reason, who accepted it and until when, and can be changed or withdrawn there.
+It stays listed on the server's page, greyed out and marked **Accepted until**
+its expiry, with the reason and who accepted it in its tooltip, and can be
+changed or withdrawn there.
 On expiry it counts again: if it is an emergency, it is sent at once, and the
 next digest lists it. An acceptance covers one vulnerability on one server's
 host, or on one of its images: in every package affected there, but nowhere
@@ -279,10 +280,20 @@ else. When the image is updated, it is a new image, and is checked afresh.
 
 Under **Settings › Your pages**, each user chooses the lowest severity their
 pages show (low by default). Less severe vulnerabilities are still checked and
-listed under **Below your threshold** on each server's page, but do not count
-towards its status. Vulnerabilities known to be exploited, and those of
+listed on each server's page, greyed out and marked **Below threshold**, but do
+not count towards its status. Vulnerabilities known to be exploited, and those of
 unknown severity, are always shown. This only changes what you see:
 emergencies and the digest follow **What is worth sending**.
+
+## Old kernels
+
+A kernel package installed but not running, for example
+`linux-image-6.8.0-50-generic` on a server running `6.8.0-60-generic`, cannot
+be attacked until the server boots it. Its vulnerabilities are listed greyed
+out and marked **Old kernel**, and a note on the server's page names the old
+kernels installed. They count towards nothing: no status, no emergency, no
+digest. After a reboot into that kernel, they count like any other.
+`apt autoremove` removes old kernels.
 
 ## Backups
 

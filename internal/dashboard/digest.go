@@ -152,6 +152,9 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 		fresh := digestServer{Hostname: host, URL: url}
 		expiring := digestServer{Hostname: host, URL: url}
 		for _, f := range findings {
+			if f.OldKernel {
+				continue
+			}
 			line := digestFinding{Line: findingLine(&f, names.where(f.Target)), URL: f.URL}
 			// An acceptance that ended since the last digest, or ends within
 			// a week, is worth a look; one without a fix stays silent.

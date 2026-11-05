@@ -213,7 +213,7 @@ func (a *alerter) checkAgent(ctx context.Context, ag *store.Agent, open map[aler
 	// and is raised again then.
 	current := map[string][]store.Finding{}
 	for _, f := range findings {
-		if isEmergency(&f, settings) && rs.active(&f, now) == nil {
+		if !f.OldKernel && isEmergency(&f, settings) && rs.active(&f, now) == nil {
 			current[f.Vulnerability] = append(current[f.Vulnerability], f)
 		}
 	}

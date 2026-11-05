@@ -118,13 +118,16 @@ func (m *matching) match(ctx context.Context, agentID string) {
 		m.log.Error("matching report", "agent", agentID, "error", err)
 		return
 	}
+	running := kernelABI(r.Host.Kernel)
 	findings := make([]store.Finding, 0, len(res.Findings))
 	for _, f := range res.Findings {
-		findings = append(findings, store.Finding{
+		sf := store.Finding{
 			Target: f.Target, Package: f.Package, Version: f.Version, Kind: f.Kind,
 			Vulnerability: f.Vulnerability, Severity: f.Severity, CVSS: f.CVSS, FixVersions: f.FixVersions,
 			KnownExploited: f.KnownExploited, URL: f.URL,
-		})
+		}
+		sf.OldKernel = oldKernel(&sf, running)
+		findings = append(findings, sf)
 	}
 	if err := m.store.ReplaceFindings(ctx, agentID, rep.Sequence, status.Built, findings, res.Unchecked, m.now()); err != nil {
 		m.log.Error("storing findings", "agent", agentID, "error", err)

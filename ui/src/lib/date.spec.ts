@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatOffset, formatUTC, offsetMinutes, timeAgo } from './date.js';
+import { formatOffset, formatUptime, formatUTC, offsetMinutes, timeAgo } from './date.js';
 
 const now = Date.parse('2026-11-05T13:00:00Z');
 
@@ -25,5 +25,10 @@ describe('dates', () => {
 		expect(offsetMinutes('2026-11-05T13:35:42Z')).toBe(0);
 		expect(formatOffset(0)).toBe('UTC+00:00');
 		expect(formatOffset(-270)).toBe('UTC-04:30');
+	});
+	it('shows an uptime', () => {
+		expect(formatUptime(3 * 3_600)).toBe('3 h');
+		expect(formatUptime(86_400 + 7_200)).toBe('1 day 2 h');
+		expect(formatUptime(12 * 86_400)).toBe('12 days 0 h');
 	});
 });

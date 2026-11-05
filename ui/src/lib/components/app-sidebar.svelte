@@ -45,7 +45,8 @@
 				{#each nav as item (item.href)}
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={page.url.pathname === item.href}
+							isActive={page.url.pathname === item.href ||
+								(item.href === '/' && page.url.pathname.startsWith('/servers/'))}
 							tooltipContent={item.label}
 						>
 							{#snippet child({ props })}

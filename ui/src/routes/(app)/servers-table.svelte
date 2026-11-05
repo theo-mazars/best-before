@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
@@ -159,7 +160,7 @@
 						<span class="flex items-center gap-1">
 							{@render sortable('vulns', 'Vulnerabilities')}
 							<Hint
-								text="Coloured counts have a fix, are at or above your threshold and are not accepted. Grey counts are the others: they never change the status."
+								text="Coloured counts have a fix, are at or above your threshold and are not accepted. Grey counts are the others (no fix, below threshold, accepted, old kernels): they never change the status."
 							/>
 						</span>
 					</Table.Head>
@@ -173,8 +174,7 @@
 					<Table.Row class={s.problems.length ? 'border-b-0' : undefined}>
 						<Table.Cell><StatusBadge status={s.status} /></Table.Cell>
 						<Table.Cell class="font-medium">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- server page until migrated -->
-							<a href="/servers/{s.id}" data-sveltekit-reload class="hover:underline"
+							<a href={resolve('/(app)/servers/[id]', { id: s.id })} class="hover:underline"
 								>{s.hostname}</a
 							>
 						</Table.Cell>

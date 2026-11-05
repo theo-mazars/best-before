@@ -55,16 +55,19 @@ func (rs risks) active(f *store.Finding, now time.Time) *store.AcceptedRisk {
 
 // Where a finding goes on a user's pages.
 const (
-	placeOpen     = iota // counts towards the server's status
-	placeNoFix           // silent until a fix appears
-	placeBelow           // below the user's threshold
-	placeAccepted        // accepted, until it expires
+	placeOpen      = iota // counts towards the server's status
+	placeNoFix            // silent until a fix appears
+	placeBelow            // below the user's threshold
+	placeAccepted         // accepted, until it expires
+	placeOldKernel        // in a kernel installed but not running
 )
 
 // place sorts a finding for a user whose threshold is min. An accepted risk
-// is shown as such whatever its severity.
+// is shown as such whatever its severity, unless the kernel is not running.
 func place(f *store.Finding, rs risks, min string, now time.Time) int {
 	switch {
+	case f.OldKernel:
+		return placeOldKernel
 	case rs.active(f, now) != nil:
 		return placeAccepted
 	case !shown(f, min):

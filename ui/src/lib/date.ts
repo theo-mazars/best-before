@@ -43,3 +43,11 @@ export function timeAgo(iso: string | null | undefined, now: number): string {
 	}
 	return 'just now';
 }
+
+// formatUptime shows a duration in days and hours.
+export function formatUptime(seconds: number): string {
+	const days = Math.floor(seconds / 86_400);
+	const hours = Math.floor((seconds % 86_400) / 3_600);
+	if (days === 0) return `${hours} h`;
+	return `${days} ${days === 1 ? 'day' : 'days'} ${hours} h`;
+}

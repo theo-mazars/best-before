@@ -73,6 +73,8 @@ type alertTest struct {
 	now   time.Time
 	agent *store.Agent
 	hook  *hook
+	// kernel is the running kernel the reports give.
+	kernel string
 }
 
 func newAlertTest(t *testing.T) *alertTest {
@@ -112,7 +114,9 @@ func (at *alertTest) addHook(emergencies, digest bool) {
 // report records a report from the agent, matched with these findings.
 func (at *alertTest) report(seq uint64, findings ...vulns.Finding) {
 	at.t.Helper()
-	body, _ := json.Marshal(testServerReport())
+	r := testServerReport()
+	r.Host.Kernel = at.kernel
+	body, _ := json.Marshal(r)
 	if err := at.store.RecordReport(at.ctx, at.agent.ID, seq, bytes.Repeat([]byte{byte(seq)}, 32), at.now, "v0.1.0", body); err != nil {
 		at.t.Fatal(err)
 	}
