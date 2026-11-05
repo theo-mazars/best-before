@@ -6,7 +6,7 @@ export const stateLooks: Record<CveState, { label: string; class: string }> = {
 	noFix: { label: 'No fix yet', class: 'bg-muted text-muted-foreground' },
 	below: { label: 'Below threshold', class: 'bg-muted text-muted-foreground' },
 	accepted: { label: 'Accepted', class: 'bg-sky-500/10 text-sky-700 dark:text-sky-400' },
-	oldKernel: { label: 'Old kernel', class: 'bg-muted text-muted-foreground' }
+	oldKernel: { label: 'Not running', class: 'bg-muted text-muted-foreground' }
 };
 
 export const severityLooks: Record<string, { label: string; class: string }> = {

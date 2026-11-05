@@ -25,6 +25,20 @@ func TestOldKernelRule(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
+		a, b  string
+		newer bool
+	}{
+		{"7.0.0-42", "7.0.0-27", true},
+		{"7.0.0-27", "7.0.0-42", false},
+		{"6.10.0-1", "6.9.0-80", true},
+		{"6.8.0-60", "6.8.0-60", false},
+		{"6.8.0-60", "", false},
+	} {
+		if got := newerABI(tc.a, tc.b); got != tc.newer {
+			t.Errorf("newerABI(%q, %q) = %v", tc.a, tc.b, got)
+		}
+	}
+	for _, tc := range []struct {
 		pkg, target, kind, running string
 		old                        bool
 	}{

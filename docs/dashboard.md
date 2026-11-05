@@ -309,10 +309,14 @@ emergencies and the digest follow **What is worth sending**.
 A kernel package installed but not running, for example
 `linux-image-6.8.0-50-generic` on a server running `6.8.0-60-generic`, cannot
 be attacked until the server boots it. Its vulnerabilities are listed greyed
-out and marked **Old kernel**, and a note on the server's page names the old
-kernels installed. They count towards nothing: no status, no emergency, no
-digest. After a reboot into that kernel, they count like any other.
+out and marked **Not running**, and a note on the server's page names the
+old kernels installed. They count towards nothing: no status, no emergency,
+no digest. After a reboot into that kernel, they count like any other.
 `apt autoremove` removes old kernels.
+
+A newer kernel, installed but waiting for a reboot, is treated the same way,
+and the note says so: until the reboot, the running kernel's vulnerabilities
+are the ones that count, and the server usually shows a reboot as required.
 
 ## Backups
 

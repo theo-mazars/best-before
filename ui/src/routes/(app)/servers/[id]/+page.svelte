@@ -50,6 +50,35 @@
 	let withdrawing = $state<{ pkg: PackageRow; cve: Cve } | null>(null);
 
 	const refresh = () => invalidate('app:server');
+
+	// Kernels installed but not running: newer ones wait for a reboot, older
+	// ones can be removed.
+	const kernelNotes = $derived.by(() => {
+		const list = (newer: boolean) =>
+			(v?.oldKernels ?? [])
+				.filter((k) => k.newer === newer)
+				.map(
+					(k) =>
+						`${k.abi} (${k.vulnerabilities} ${k.vulnerabilities === 1 ? 'vulnerability' : 'vulnerabilities'})`
+				)
+				.join(', ');
+		const notes = [];
+		const newer = list(true);
+		if (newer)
+			notes.push({
+				title: 'Newer kernel installed, waiting for a reboot',
+				list: newer,
+				hint: 'Not running yet, so not counted: the running kernel counts until the server reboots.'
+			});
+		const older = list(false);
+		if (older)
+			notes.push({
+				title: 'Old kernel installed',
+				list: older,
+				hint: 'Not running, so not counted. Removing old kernels (apt autoremove) clears the list.'
+			});
+		return notes;
+	});
 	// The latest report waits for matching: what is shown is older.
 	const pending = $derived(v?.report ? !v.report.matched : false);
 
@@ -197,26 +226,20 @@
 				</Card.Root>
 			</div>
 
-			{#if v.oldKernels.length}
+			{#each kernelNotes as note (note.title)}
 				<Alert.Root class="text-muted-foreground">
 					<CpuIcon />
 					<Alert.Title class="flex items-center gap-1.5">
-						Old {v.oldKernels.length === 1 ? 'kernel' : 'kernels'} installed:
-						{v.oldKernels
-							.map(
-								(k) =>
-									`${k.abi} (${k.vulnerabilities} ${k.vulnerabilities === 1 ? 'vulnerability' : 'vulnerabilities'})`
-							)
-							.join(', ')}
-						<Hint
-							text="Not running, so not counted. Removing them (apt autoremove) clears the list."
-						/>
+						{note.title}: {note.list}
+						<Hint text={note.hint} />
 					</Alert.Title>
 				</Alert.Root>
-			{/if}
+			{/each}
 
 			{#if pending}
-				<Alert.Root>
+				<Alert.Root
+					class="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:border-amber-500/40 dark:text-amber-400"
+				>
 					<HourglassIcon />
 					<Alert.Title>
 						{#if v.report?.matchedAt}

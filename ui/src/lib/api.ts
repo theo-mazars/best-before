@@ -120,7 +120,7 @@ export type ServerPage = {
 		listsPublishedAt: string | null;
 		agentVersion: string;
 	} | null;
-	oldKernels: { abi: string; packages: string[]; vulnerabilities: number }[];
+	oldKernels: { abi: string; packages: string[]; vulnerabilities: number; newer: boolean }[];
 	upgradable: { name: string; current: string; candidate: string; security: boolean }[];
 	packages: PackageRow[];
 	images: ImageInfo[];

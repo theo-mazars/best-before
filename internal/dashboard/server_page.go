@@ -51,6 +51,9 @@ type oldKernelView struct {
 	ABI             string   `json:"abi"`
 	Packages        []string `json:"packages"`
 	Vulnerabilities int      `json:"vulnerabilities"`
+	// Newer is true for a kernel newer than the running one: it runs after
+	// a reboot.
+	Newer bool `json:"newer"`
 }
 
 type updateView struct {
@@ -302,7 +305,7 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 			abi := kernelABI(f.Package)
 			k := kernels[abi]
 			if k == nil {
-				k = &oldKernelView{ABI: abi, Packages: []string{}}
+				k = &oldKernelView{ABI: abi, Packages: []string{}, Newer: newerABI(abi, kernelABI(h.Kernel))}
 				kernels[abi], kernelCVEs[abi] = k, map[string]bool{}
 			}
 			if !slices.Contains(k.Packages, f.Package) {
