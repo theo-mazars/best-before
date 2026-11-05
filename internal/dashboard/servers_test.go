@@ -67,6 +67,17 @@ func testServerReport() report.Report {
 	}
 }
 
+// overview returns the servers on the overview, as cookie's user sees them.
+func (tw *testWeb) overview(cookie *http.Cookie) []serverSummary {
+	tw.t.Helper()
+	rec := tw.do(http.MethodGet, "/api/ui/overview", nil, cookie)
+	var v overviewView
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &v) != nil || len(v.Servers) != 1 {
+		tw.t.Fatalf("overview: HTTP %d\n%s", rec.Code, rec.Body)
+	}
+	return v.Servers
+}
+
 func TestOverviewAndServerPage(t *testing.T) {
 	tw := newTestWeb(t, "")
 	ctx := context.Background()
@@ -79,8 +90,8 @@ func TestOverviewAndServerPage(t *testing.T) {
 	admin := tw.session("admin@example.org")
 
 	// Before the first report.
-	if body := tw.do(http.MethodGet, "/", nil, admin).Body.String(); !strings.Contains(body, statusWaiting) {
-		t.Errorf("overview before the first report:\n%s", body)
+	if s := tw.overview(admin)[0]; s.Status != statusWaiting {
+		t.Errorf("overview before the first report: %q", s.Status)
 	}
 
 	body, _ := json.Marshal(testServerReport())
@@ -88,8 +99,8 @@ func TestOverviewAndServerPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Received but not matched yet: never OK.
-	if body := tw.do(http.MethodGet, "/", nil, admin).Body.String(); !strings.Contains(body, statusUnchecked) {
-		t.Errorf("overview before matching:\n%s", body)
+	if s := tw.overview(admin)[0]; s.Status != statusUnchecked {
+		t.Errorf("overview before matching: %q", s.Status)
 	}
 
 	db := fakeDB{findings: []vulns.Finding{
@@ -103,21 +114,20 @@ func TestOverviewAndServerPage(t *testing.T) {
 	m := newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now })
 	m.match(ctx, a.ID)
 
-	rec := tw.do(http.MethodGet, "/", nil, admin)
-	page := rec.Body.String()
 	// One fixable critical, one fixable high, one known exploited; the
 	// unfixed critical is silent.
-	for _, want := range []string{
-		`<a href="/servers/` + a.ID + `">web-01</a>`, "<td>" + statusCritical + "</td>",
-		"<td>1</td>\n\t\t\t<td>1</td>\n\t\t\t<td>0</td>\n\t\t\t<td>1</td>", "1 of 2",
-	} {
-		if !strings.Contains(page, want) {
-			t.Errorf("overview lacks %q:\n%s", want, page)
-		}
+	s := tw.overview(admin)[0]
+	if s.ID != a.ID || s.Hostname != "web-01" || s.Status != statusCritical ||
+		s.Critical != 1 || s.High != 1 || s.Medium != 0 || s.KnownExploited != 1 ||
+		s.SecurityUpdates != 1 || s.Updates != 2 {
+		t.Errorf("overview: %+v", s)
+	}
+	if c, h := s.Severities["critical"], s.Severities["high"]; *c != (severityCount{Open: 1, Muted: 1}) || *h != (severityCount{Open: 1}) {
+		t.Errorf("severities: critical %+v, high %+v", c, h)
 	}
 
-	rec = tw.do(http.MethodGet, "/servers/"+a.ID, nil, admin)
-	page = rec.Body.String()
+	rec := tw.do(http.MethodGet, "/servers/"+a.ID, nil, admin)
+	page := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("server page: HTTP %d\n%s", rec.Code, page)
 	}
@@ -220,16 +230,16 @@ func TestThresholdAndAcceptedRisks(t *testing.T) {
 	// With zlib accepted too, nothing the user sees is left: OK.
 	accept["target"], accept["vulnerability"] = []string{testImage}, []string{"CVE-2026-0003"}
 	tw.do(http.MethodPost, server+"/risks", accept, admin)
-	if page := tw.do(http.MethodGet, "/", nil, admin).Body.String(); !strings.Contains(page, "<td>"+statusOK+"</td>") {
-		t.Errorf("overview:\n%s", page)
+	if s := tw.overview(admin)[0]; s.Status != statusOK {
+		t.Errorf("overview: %q", s.Status)
 	}
 
 	// Withdrawn, openssl counts again.
 	if rec := tw.do(http.MethodPost, server+"/risks/withdraw", form, admin); rec.Code != http.StatusSeeOther {
 		t.Fatalf("withdraw: HTTP %d", rec.Code)
 	}
-	if page := tw.do(http.MethodGet, "/", nil, admin).Body.String(); !strings.Contains(page, "<td>"+statusCritical+"</td>") {
-		t.Errorf("overview after withdrawing:\n%s", page)
+	if s := tw.overview(admin)[0]; s.Status != statusCritical {
+		t.Errorf("overview after withdrawing: %q", s.Status)
 	}
 }
 
@@ -290,9 +300,8 @@ func TestUncheckedImageNeedsAttention(t *testing.T) {
 	newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now }).match(ctx, a.ID)
 
 	admin := tw.session("admin@example.org")
-	overview := tw.do(http.MethodGet, "/", nil, admin).Body.String()
-	if !strings.Contains(overview, "<td>"+statusAttention+"</td>") || !strings.Contains(overview, "(1 not checked)") {
-		t.Errorf("overview:\n%s", overview)
+	if s := tw.overview(admin)[0]; s.Status != statusAttention || s.NotChecked != 1 {
+		t.Errorf("overview: %+v", s)
 	}
 	page := tw.do(http.MethodGet, "/servers/"+a.ID, nil, admin).Body.String()
 	if !strings.Contains(page, "not checked: the vulnerability database has no security data for opensuse-leap 15.6") {

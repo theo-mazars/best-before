@@ -71,7 +71,7 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		return nil, err
 	}
 	funcs := template.FuncMap{"date": formatDate, "join": strings.Join, "duration": formatDuration}
-	for _, page := range []string{"agents", "code", "error", "overview", "server", "risk", "settings", "channel"} {
+	for _, page := range []string{"agents", "code", "error", "server", "risk", "settings", "channel"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -94,11 +94,11 @@ func (w *web) routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/ui/logout", page(http.HandlerFunc(w.apiLogout)))
 	mux.Handle("GET /api/ui/setup", page(http.HandlerFunc(w.setupInfo)))
 	mux.Handle("POST /api/ui/setup", page(http.HandlerFunc(w.completeSetup)))
+	mux.Handle("GET /api/ui/overview", page(w.apiAdmin(w.overview)))
 	for _, m := range []string{"GET", "POST", "PUT", "DELETE"} {
 		mux.Handle(m+" /api/ui/", page(http.HandlerFunc(w.apiNotFound)))
 	}
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
-	mux.Handle("GET /{$}", page(w.admin(w.overview)))
 	mux.Handle("GET /servers/{id}", page(w.admin(w.serverPage)))
 	mux.Handle("GET /servers/{id}/risks/new", page(w.admin(w.riskPage)))
 	mux.Handle("POST /servers/{id}/risks", page(w.admin(w.acceptRisk)))
