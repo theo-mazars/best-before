@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -23,7 +24,15 @@ type spa struct {
 	csp   string
 }
 
-var inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+var (
+	inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+	inlineStyle  = regexp.MustCompile(`style="([^"]*)"`)
+)
+
+func cspHash(b []byte) string {
+	h := sha256.Sum256(b)
+	return "'sha256-" + base64.StdEncoding.EncodeToString(h[:]) + "'"
+}
 
 func newSPA() (*spa, error) {
 	files, _ := fs.Sub(uiFiles, "webui/dist")
@@ -39,11 +48,44 @@ func newSPA() (*spa, error) {
 	// rather than allowing inline scripts.
 	scripts := "'self'"
 	for _, m := range inlineScript.FindAllSubmatch(index, -1) {
-		h := sha256.Sum256(m[1])
-		scripts += " 'sha256-" + base64.StdEncoding.EncodeToString(h[:]) + "'"
+		scripts += " " + cspHash(m[1])
 	}
-	csp := "default-src 'none'; script-src " + scripts + "; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+	styles, err := fixedStyles(files)
+	if err != nil {
+		return nil, err
+	}
+	csp := "default-src 'none'; script-src " + scripts + "; style-src 'self'" + styles + "; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 	return &spa{files: files, index: index, csp: csp}, nil
+}
+
+// fixedStyles allows, by their hashes, the style attributes written in the
+// app's markup (such as SvelteKit's screen reader announcer's): Svelte
+// creates them from HTML, which the CSP checks. Styles set from script are not
+// concerned.
+func fixedStyles(files fs.FS) (string, error) {
+	seen := map[string]bool{}
+	var hashes []string
+	err := fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".js") {
+			return err
+		}
+		b, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		for _, m := range inlineStyle.FindAllSubmatch(b, -1) {
+			if h := cspHash(m[1]); !seen[h] {
+				seen[h] = true
+				hashes = append(hashes, h)
+			}
+		}
+		return nil
+	})
+	if err != nil || len(hashes) == 0 {
+		return "", err
+	}
+	slices.Sort(hashes)
+	return "; style-src-attr 'unsafe-hashes' " + strings.Join(hashes, " "), nil
 }
 
 // ServeHTTP serves the app's files, and its page for any other path so that

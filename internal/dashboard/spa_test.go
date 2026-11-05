@@ -26,6 +26,14 @@ func TestSPA(t *testing.T) {
 		}
 	}
 
+	styles, err := fixedStyles(tw.w.spa.files)
+	if err != nil || !strings.Contains(csp, "style-src 'self'"+styles+";") {
+		t.Errorf("fixed styles not allowed by the CSP: %q, %v", csp, err)
+	}
+	if strings.Contains(csp, "style-src-attr") && !strings.Contains(csp, "style-src-attr 'unsafe-hashes' 'sha256-") {
+		t.Errorf("style attributes allowed beyond their hashes: %q", csp)
+	}
+
 	for _, path := range []string{"/api/ui/nope", "/api/v1/nope"} {
 		if rec := tw.do(http.MethodGet, path, nil, nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: HTTP %d", path, rec.Code)
