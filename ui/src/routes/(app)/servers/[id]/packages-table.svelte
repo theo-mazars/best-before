@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
@@ -49,6 +50,15 @@
 
 	let pageIndex = $state(0);
 	const expanded = new SvelteSet<string>();
+	const cvePageSize = 10;
+	const cvePages = new SvelteMap<string, number>();
+
+	// cvePage is the page of an expanded package's vulnerabilities, kept
+	// within range when a refresh shortens the list.
+	function cvePage(p: PackageRow) {
+		const last = Math.max(0, Math.ceil(p.cves.length / cvePageSize) - 1);
+		return Math.min(cvePages.get(key(p)) ?? 0, last);
+	}
 
 	const places = $derived(wheres(packages));
 	const mutedCount = $derived(packages.filter((p) => p.muted).length);
@@ -271,6 +281,8 @@
 </div>
 
 {#snippet cves(p: PackageRow)}
+	{@const cvePageIndex = cvePage(p)}
+	{@const first = cvePageIndex * cvePageSize}
 	<Table.Root class="text-xs">
 		<Table.Header>
 			<Table.Row class="hover:bg-transparent">
@@ -284,7 +296,7 @@
 			</Table.Row>
 		</Table.Header>
 		<Table.Body>
-			{#each p.cves as c (c.id)}
+			{#each p.cves.slice(first, first + cvePageSize) as c (c.id)}
 				{@const sev = severityLook(c.severity)}
 				{@const state = stateLooks[c.state]}
 				<Table.Row class="hover:bg-transparent">
@@ -354,4 +366,31 @@
 			{/each}
 		</Table.Body>
 	</Table.Root>
+	{#if p.cves.length > cvePageSize}
+		<div class="flex items-center justify-end gap-1 pt-1">
+			<span class="mr-1 text-xs text-muted-foreground tabular-nums">
+				{first + 1}–{Math.min(first + cvePageSize, p.cves.length)} of {p.cves.length}
+			</span>
+			<Button
+				variant="ghost"
+				size="icon"
+				class="size-7"
+				aria-label="Previous vulnerabilities"
+				disabled={cvePageIndex === 0}
+				onclick={() => cvePages.set(key(p), cvePageIndex - 1)}
+			>
+				<ChevronLeftIcon />
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon"
+				class="size-7"
+				aria-label="Next vulnerabilities"
+				disabled={first + cvePageSize >= p.cves.length}
+				onclick={() => cvePages.set(key(p), cvePageIndex + 1)}
+			>
+				<ChevronRightIcon />
+			</Button>
+		</div>
+	{/if}
 {/snippet}
