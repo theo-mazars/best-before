@@ -21,7 +21,8 @@ type Finding struct {
 	FixVersions    []string // empty when no fix exists
 	KnownExploited bool
 	URL            string
-	// OldKernel is set for a kernel package installed but not running.
+	// OldKernel is set by the dashboard, not stored: the package is a
+	// kernel installed but not running.
 	OldKernel    bool
 	FirstSeenAt  time.Time
 	FixableSince *time.Time
@@ -47,6 +48,7 @@ const (
 	selectReports = `SELECT agent_id, received_at, sequence, body, matched_sequence, matched_at, matched_db_built,
 		unchecked FROM latest_reports`
 	selectReport    = selectReports + ` WHERE agent_id = ?`
+	selectKernel    = `SELECT coalesce(json_extract(body, '$.host.kernel'), '') FROM latest_reports WHERE agent_id = ?`
 	selectAgentSeqs = `SELECT r.agent_id, r.sequence FROM latest_reports r
 		JOIN agents a ON a.id = r.agent_id WHERE a.revoked_at IS NULL`
 
@@ -54,12 +56,12 @@ const (
 		FROM findings WHERE agent_id = ?`
 	deleteFindings = `DELETE FROM findings WHERE agent_id = ?`
 	insertFinding  = `INSERT INTO findings (agent_id, target, package, version, kind, vulnerability, severity,
-		cvss, fix_versions, known_exploited, url, old_kernel, first_seen_at, fixable_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		cvss, fix_versions, known_exploited, url, first_seen_at, fixable_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	markMatched = `UPDATE latest_reports SET matched_sequence = ?, matched_at = ?, matched_db_built = ?,
 		unchecked = ? WHERE agent_id = ? AND sequence = ?`
 	selectFindings = `SELECT target, package, version, kind, vulnerability, severity, cvss, fix_versions,
-		known_exploited, url, old_kernel, first_seen_at, fixable_since FROM findings WHERE agent_id = ?
+		known_exploited, url, first_seen_at, fixable_since FROM findings WHERE agent_id = ?
 		ORDER BY fix_versions = '', known_exploited DESC,
 		CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3
 			WHEN 'negligible' THEN 4 ELSE 5 END, cvss DESC, package, vulnerability`
@@ -111,6 +113,17 @@ func scanReport(row interface{ Scan(...any) error }) (*Report, error) {
 	r.MatchedDBBuilt = fromUnix(built)
 	r.Matched = matchedSeq.Valid && uint64(matchedSeq.Int64) == r.Sequence
 	return &r, nil
+}
+
+// RunningKernel returns the kernel release in the agent's latest report,
+// e.g. 6.8.0-60-generic, or "" before the first report.
+func (s *Store) RunningKernel(ctx context.Context, agentID string) (string, error) {
+	var k string
+	err := s.db.QueryRowContext(ctx, selectKernel, agentID).Scan(&k)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return k, err
 }
 
 // ReportSequences lists the latest report of every agent not revoked, for
@@ -194,7 +207,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, agentID string, seq uint64,
 			}
 			_, err := tx.ExecContext(ctx, insertFinding, agentID, f.Target, f.Package, f.Version, f.Kind,
 				f.Vulnerability, f.Severity, f.CVSS, strings.Join(f.FixVersions, ", "), f.KnownExploited,
-				f.URL, f.OldKernel, h.firstSeen, fixableSince)
+				f.URL, h.firstSeen, fixableSince)
 			if err != nil {
 				return err
 			}
@@ -218,7 +231,7 @@ func (s *Store) Findings(ctx context.Context, agentID string) ([]Finding, error)
 		var firstSeen int64
 		var fixable sql.NullInt64
 		if err := rows.Scan(&f.Target, &f.Package, &f.Version, &f.Kind, &f.Vulnerability, &f.Severity, &f.CVSS,
-			&fixes, &f.KnownExploited, &f.URL, &f.OldKernel, &firstSeen, &fixable); err != nil {
+			&fixes, &f.KnownExploited, &f.URL, &firstSeen, &fixable); err != nil {
 			return nil, err
 		}
 		if fixes != "" {

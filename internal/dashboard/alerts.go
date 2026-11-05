@@ -201,7 +201,7 @@ func (a *alerter) checkAgent(ctx context.Context, ag *store.Agent, open map[aler
 		}
 	}
 
-	findings, err := a.store.Findings(ctx, ag.ID)
+	findings, err := loadFindings(ctx, a.store, ag.ID)
 	if err != nil {
 		return nil, err
 	}

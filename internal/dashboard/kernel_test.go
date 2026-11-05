@@ -33,6 +33,11 @@ func TestOldKernelRule(t *testing.T) {
 		{"linux-headers-6.8.0-50", vulns.TargetHost, vulns.KindPackage, "6.8.0-60", true},
 		{"linux-hwe-6.8-headers-6.8.0-50", vulns.TargetHost, vulns.KindPackage, "6.8.0-60", true},
 		{"linux-image-6.1.0-25-amd64", vulns.TargetHost, vulns.KindPackage, "6.1.0-28", true},
+		{"linux-headers-7.0.0-38", vulns.TargetHost, vulns.KindPackage, "7.0.0-42", true},
+		{"linux-headers-7.0.0-38-generic", vulns.TargetHost, vulns.KindPackage, "7.0.0-42", true},
+		{"linux-modules-7.0.0-38-generic", vulns.TargetHost, vulns.KindPackage, "7.0.0-42", true},
+		{"linux-tools-7.0.0-38", vulns.TargetHost, vulns.KindPackage, "7.0.0-42", true},
+		{"linux-tools-7.0.0-38-generic", vulns.TargetHost, vulns.KindPackage, "7.0.0-42", true},
 		{"linux-image-6.8.0-60-generic", vulns.TargetHost, vulns.KindPackage, "6.8.0-60", false},
 		{"linux-headers-6.8.0-60", vulns.TargetHost, vulns.KindPackage, "6.8.0-60", false},
 		{"linux-image-generic", vulns.TargetHost, vulns.KindPackage, "6.8.0-60", false},
@@ -59,7 +64,7 @@ func TestOldKernelIsQuiet(t *testing.T) {
 		FixVersions: []string{"6.8.0-51.52"}, KnownExploited: true}
 	at.report(1, old)
 
-	fs, err := at.store.Findings(at.ctx, at.agent.ID)
+	fs, err := loadFindings(at.ctx, at.store, at.agent.ID)
 	if err != nil || len(fs) != 1 || !fs[0].OldKernel {
 		t.Fatalf("findings: %+v, %v", fs, err)
 	}
@@ -81,7 +86,7 @@ func TestOldKernelIsQuiet(t *testing.T) {
 	at.kernel = "6.8.0-50-generic"
 	at.now = at.now.Add(time.Hour)
 	at.report(2, old)
-	if fs, _ := at.store.Findings(at.ctx, at.agent.ID); len(fs) != 1 || fs[0].OldKernel {
+	if fs, _ := loadFindings(at.ctx, at.store, at.agent.ID); len(fs) != 1 || fs[0].OldKernel {
 		t.Fatalf("after reboot: %+v", fs)
 	}
 	if got := at.check(); len(got) != 1 {

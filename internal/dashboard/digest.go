@@ -140,7 +140,7 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 			}
 		}
 
-		findings, err := a.store.Findings(ctx, ag.ID)
+		findings, err := loadFindings(ctx, a.store, ag.ID)
 		if err != nil {
 			return nil, err
 		}

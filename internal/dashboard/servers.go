@@ -224,7 +224,7 @@ func (w *web) summary(r *http.Request, a *store.Agent, u *store.User, now time.T
 	if err := json.Unmarshal(rep.Body, st.body); err != nil {
 		return nil, nil, err
 	}
-	if st.findings, err = w.store.Findings(r.Context(), a.ID); err != nil {
+	if st.findings, err = loadFindings(r.Context(), w.store, a.ID); err != nil {
 		return nil, nil, err
 	}
 	if st.risks, err = loadRisks(r.Context(), w.store, a.ID); err != nil {
