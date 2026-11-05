@@ -85,7 +85,7 @@ func TestOldKernelIsQuiet(t *testing.T) {
 	s := &serverSummary{Severities: map[string]*severityCount{"critical": {}}}
 	settings, _ := at.store.AlertSettings(at.ctx)
 	s.count(fs, risks{}, "low", settings, at.now)
-	if s.Critical+s.KnownExploited != 0 || *s.Severities["critical"] != (severityCount{Muted: 1}) {
+	if s.Critical+s.KnownExploited != 0 || *s.Severities["critical"] != (severityCount{}) {
 		t.Errorf("summary: %+v, critical %+v", s, s.Severities["critical"])
 	}
 	if got := at.check(); len(got) != 0 {

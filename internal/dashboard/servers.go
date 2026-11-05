@@ -38,7 +38,7 @@ type serverSummary struct {
 	NotChecked      int  `json:"notChecked"`
 	// Severities counts every vulnerability by severity: open ones count
 	// towards the status, muted ones have no fix, are below the user's
-	// threshold, are accepted or are in an old kernel.
+	// threshold or are accepted. Kernels not running are left out.
 	Severities map[string]*severityCount `json:"severities"`
 	// Problems are gaps in the report, which are never mistaken for a
 	// clean server.
@@ -74,6 +74,9 @@ const (
 func (s *serverSummary) count(findings []store.Finding, rs risks, min string, settings *store.AlertSettings, now time.Time) {
 	for _, group := range groupByCVE(findings) {
 		p, f := placeCVE(group, rs, min, now)
+		if p == placeOldKernel {
+			continue // not running: only on the server's page, under its package
+		}
 		if emergency(group, rs, settings, now) {
 			s.Emergencies++
 		}

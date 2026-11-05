@@ -165,7 +165,7 @@
 						<span class="flex items-center gap-1">
 							{@render sortable('vulns', 'Vulnerabilities')}
 							<Hint
-								text="Coloured counts have a fix, are at or above your threshold and are not accepted. Grey counts are the others (no fix, below threshold, accepted, old kernels): they never change the status."
+								text="Coloured counts have a fix, are at or above your threshold and are not accepted. Grey counts are the others (no fix, below threshold, accepted): they never change the status. Kernels installed but not running are left out."
 							/>
 						</span>
 					</Table.Head>
