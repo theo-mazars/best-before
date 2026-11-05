@@ -190,6 +190,13 @@ func TestPagesNeedAdminSession(t *testing.T) {
 		t.Errorf("user role: HTTP %d", rec.Code)
 	}
 
+	if rec := tw.do(http.MethodGet, "/api/ui/overview", nil, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("overview without session: HTTP %d", rec.Code)
+	}
+	if rec := tw.do(http.MethodGet, "/api/ui/overview", nil, tw.session("user@example.org")); rec.Code != http.StatusForbidden {
+		t.Errorf("overview for user role: HTTP %d", rec.Code)
+	}
+
 	admin := tw.session("admin@example.org")
 	rec := tw.do(http.MethodGet, "/agents", nil, admin)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "The fridge is empty") {

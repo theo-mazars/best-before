@@ -20,24 +20,42 @@ import (
 // fixable findings the user sees and has not accepted: the others are
 // silent.
 type serverSummary struct {
-	ID              string
-	Hostname        string
-	Status          string
-	LastReportAt    *time.Time
-	Critical        int
-	High            int
-	Medium          int
-	KnownExploited  int
-	NoFixYet        int
-	Accepted        int
-	SecurityUpdates int
-	Updates         int
-	RebootRequired  bool
-	Images          int
-	NotChecked      int
+	ID              string     `json:"id"`
+	Hostname        string     `json:"hostname"`
+	Status          string     `json:"status"`
+	LastReportAt    *time.Time `json:"lastReportAt"`
+	Critical        int        `json:"critical"`
+	High            int        `json:"high"`
+	Medium          int        `json:"medium"`
+	KnownExploited  int        `json:"knownExploited"`
+	NoFixYet        int        `json:"noFixYet"`
+	Accepted        int        `json:"accepted"`
+	SecurityUpdates int        `json:"securityUpdates"`
+	Updates         int        `json:"updates"`
+	RebootRequired  bool       `json:"rebootRequired"`
+	Images          int        `json:"images"`
+	NotChecked      int        `json:"notChecked"`
+	// Severities counts every finding by severity: open ones count towards
+	// the status, muted ones have no fix, are accepted or are below the
+	// user's threshold.
+	Severities map[string]*severityCount `json:"severities"`
 	// Problems are gaps in the report, which are never mistaken for a
 	// clean server.
-	Problems []string
+	Problems []string `json:"problems"`
+}
+
+type severityCount struct {
+	Open  int `json:"open"`
+	Muted int `json:"muted"`
+}
+
+// stripSeverity is the strip box a severity goes in.
+func stripSeverity(s string) string {
+	switch s {
+	case "critical", "high", "medium", "low":
+		return s
+	}
+	return "unknown"
 }
 
 // Server statuses, worst first.
@@ -52,7 +70,14 @@ const (
 
 func (s *serverSummary) count(findings []store.Finding, rs risks, min string, now time.Time) {
 	for _, f := range findings {
-		switch place(&f, rs, min, now) {
+		p := place(&f, rs, min, now)
+		c := s.Severities[stripSeverity(f.Severity)]
+		if p == placeOpen {
+			c.Open++
+		} else {
+			c.Muted++
+		}
+		switch p {
 		case placeAccepted:
 			s.Accepted++
 			continue
@@ -139,27 +164,43 @@ func (s *serverSummary) status(agent string, rep *store.Report) string {
 
 var statusOrder = map[string]int{statusCritical: 0, statusStale: 1, statusUnchecked: 2, statusWaiting: 3, statusAttention: 4, statusOK: 5}
 
+type dbView struct {
+	Ready     bool       `json:"ready"`
+	Built     *time.Time `json:"built,omitempty"`
+	LastError string     `json:"lastError,omitempty"`
+}
+
+type overviewView struct {
+	DB      dbView          `json:"db"`
+	Servers []serverSummary `json:"servers"`
+}
+
 func (w *web) overview(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	agents, err := w.store.Agents(r.Context())
 	if err != nil {
-		w.fail(rw, r, err)
+		w.apiFail(rw, r, err)
 		return
 	}
 	now := w.now()
-	var servers []serverSummary
+	servers := []serverSummary{}
 	for _, a := range agents {
 		if a.Revoked() {
 			continue
 		}
 		s, _, err := w.summary(r, &a, u, now)
 		if err != nil {
-			w.fail(rw, r, err)
+			w.apiFail(rw, r, err)
 			return
 		}
 		servers = append(servers, *s)
 	}
 	sort.SliceStable(servers, func(i, j int) bool { return statusOrder[servers[i].Status] < statusOrder[servers[j].Status] })
-	w.render(rw, http.StatusOK, "overview", map[string]any{"User": u, "Servers": servers, "DB": w.db.Status()})
+	db := w.db.Status()
+	v := overviewView{DB: dbView{Ready: db.Ready, LastError: db.LastError}, Servers: servers}
+	if db.Ready {
+		v.DB.Built = &db.Built
+	}
+	writeJSON(rw, http.StatusOK, v)
 }
 
 // serverState is what is known about one server.
@@ -173,7 +214,10 @@ type serverState struct {
 // summary loads what is known about one server, as user u sees it. The
 // state is nil before the first report arrives.
 func (w *web) summary(r *http.Request, a *store.Agent, u *store.User, now time.Time) (*serverSummary, *serverState, error) {
-	s := &serverSummary{ID: a.ID, Hostname: a.Hostname, LastReportAt: a.LastReportAt}
+	s := &serverSummary{ID: a.ID, Hostname: a.Hostname, LastReportAt: a.LastReportAt, Problems: []string{}, Severities: map[string]*severityCount{}}
+	for _, k := range []string{"critical", "high", "medium", "low", "unknown"} {
+		s.Severities[k] = &severityCount{}
+	}
 	rep, err := w.store.Report(r.Context(), a.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		s.Status = s.status(agentStatus(a, now, w.cfg.StaleAfter), nil)

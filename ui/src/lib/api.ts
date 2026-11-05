@@ -29,3 +29,33 @@ export type Session = {
 	zone: string;
 	setup?: boolean;
 };
+
+export type SeverityCount = { open: number; muted: number };
+
+export const stripSeverities = ['critical', 'high', 'medium', 'low', 'unknown'] as const;
+export type StripSeverity = (typeof stripSeverities)[number];
+
+export type ServerSummary = {
+	id: string;
+	hostname: string;
+	status: string;
+	lastReportAt: string | null;
+	critical: number;
+	high: number;
+	medium: number;
+	knownExploited: number;
+	noFixYet: number;
+	accepted: number;
+	securityUpdates: number;
+	updates: number;
+	rebootRequired: boolean;
+	images: number;
+	notChecked: number;
+	severities: Record<StripSeverity, SeverityCount>;
+	problems: string[];
+};
+
+export type Overview = {
+	db: { ready: boolean; built?: string; lastError?: string };
+	servers: ServerSummary[];
+};
