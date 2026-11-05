@@ -1,7 +1,9 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -89,8 +91,27 @@ func (tw *testWeb) do(method, path string, form url.Values, cookie *http.Cookie,
 	return rec
 }
 
+// json sends v as a JSON body.
+func (tw *testWeb) json(method, path string, v any, cookie *http.Cookie) *httptest.ResponseRecorder {
+	tw.t.Helper()
+	body, _ := json.Marshal(v)
+	req := httptest.NewRequest(method, "https://dashboard.test"+path, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+	tw.mux.ServeHTTP(rec, req)
+	return rec
+}
+
+// login goes through both steps, stopping at the first refused one.
 func (tw *testWeb) login(email, password, code string) *httptest.ResponseRecorder {
-	return tw.do(http.MethodPost, "/login", url.Values{"email": {email}, "password": {password}, "code": {code}}, nil)
+	rec := tw.json(http.MethodPost, "/api/ui/login", map[string]string{"email": email, "password": password}, nil)
+	if rec.Code != http.StatusNoContent {
+		return rec
+	}
+	return tw.json(http.MethodPost, "/api/ui/login/code", map[string]string{"code": code}, rec.Result().Cookies()[0])
 }
 
 // session logs in and returns the session cookie, moving the clock on so
@@ -117,7 +138,7 @@ func TestLogin(t *testing.T) {
 		"wrong password": tw.login("admin@example.org", "not the password", code),
 		"wrong code":     tw.login("admin@example.org", testPassword, "000000"),
 	} {
-		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "Email, password or code is incorrect") {
+		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "incorrect") {
 			t.Errorf("%s: HTTP %d", name, rec.Code)
 		}
 		if len(rec.Result().Cookies()) != 0 {
@@ -126,11 +147,16 @@ func TestLogin(t *testing.T) {
 	}
 
 	rec := tw.login("admin@example.org", testPassword, code)
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
+	if rec.Code != http.StatusNoContent {
 		t.Fatalf("login: HTTP %d", rec.Code)
 	}
-	c := rec.Result().Cookies()[0]
-	if c.Name != sessionCookie || !c.Secure || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
+	var c *http.Cookie
+	for _, k := range rec.Result().Cookies() {
+		if k.Name == sessionCookie {
+			c = k
+		}
+	}
+	if c == nil || c.Name != sessionCookie || !c.Secure || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
 		t.Errorf("cookie: %+v", c)
 	}
 
@@ -258,5 +284,39 @@ func TestAgentStatus(t *testing.T) {
 	silent := store.Agent{EnrolledAt: now.Add(-49 * time.Hour)}
 	if got := agentStatus(&silent, now, stale); got != "stale" {
 		t.Errorf("never reported since enrolment: got %s, want stale", got)
+	}
+}
+
+func TestLoginCodeStep(t *testing.T) {
+	tw := newTestWeb(t, "")
+	step := func(c *http.Cookie, code string) *httptest.ResponseRecorder {
+		return tw.json(http.MethodPost, "/api/ui/login/code", map[string]string{"code": code}, c)
+	}
+	pending := func() *http.Cookie {
+		rec := tw.json(http.MethodPost, "/api/ui/login", map[string]string{"email": "admin@example.org", "password": testPassword}, nil)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("password step: HTTP %d", rec.Code)
+		}
+		return rec.Result().Cookies()[0]
+	}
+
+	if rec := step(nil, "000000"); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), `"field":"expired"`) {
+		t.Errorf("code without password: HTTP %d %s", rec.Code, rec.Body)
+	}
+
+	c := pending()
+	for range pendingAttempts {
+		if rec := step(c, "000000"); !strings.Contains(rec.Body.String(), `"field":"code"`) {
+			t.Fatalf("wrong code: %s", rec.Body)
+		}
+	}
+	if rec := step(c, auth.TOTPCodeAt(tw.secret, tw.now)); rec.Code != http.StatusUnauthorized {
+		t.Errorf("right code accepted after too many attempts: HTTP %d", rec.Code)
+	}
+
+	c = pending()
+	tw.now = tw.now.Add(pendingLifetime + time.Minute)
+	if rec := step(c, auth.TOTPCodeAt(tw.secret, tw.now)); rec.Code != http.StatusUnauthorized {
+		t.Errorf("expired login accepted: HTTP %d", rec.Code)
 	}
 }

@@ -20,7 +20,7 @@ func TestNoUncheckedTLS(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".dev" || d.Name() == "bin") {
+		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".dev" || d.Name() == "bin" || d.Name() == "node_modules") {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

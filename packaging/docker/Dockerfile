@@ -5,6 +5,15 @@
 #
 # See docs/dashboard.md for building it from a release.
 
+FROM node:24.16.0-alpine3.24@sha256:21f403ab171f2dc89bad4dd69d7721bfd15f084ccb46cdd225f31f2bc59b5c9a AS ui
+
+WORKDIR /src/ui
+COPY ui/package.json ui/package-lock.json ui/.npmrc ./
+RUN npm ci
+COPY ui ./
+ARG VERSION=dev
+RUN VERSION=${VERSION} npm run build
+
 FROM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build
 
 WORKDIR /src
@@ -12,6 +21,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+COPY --from=ui /src/internal/dashboard/webui/dist ./internal/dashboard/webui/dist
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath \

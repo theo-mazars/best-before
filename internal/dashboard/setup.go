@@ -4,17 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
-	"errors"
 	"fmt"
-	"net/http"
 	"net/mail"
-	"net/url"
 	"strings"
 	"sync"
 
 	"rsc.io/qr"
 
-	"github.com/theo-mazars/best-before/internal/dashboard/auth"
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
 )
 
@@ -57,102 +53,6 @@ func (s *setup) finish() {
 	s.mu.Lock()
 	s.code = ""
 	s.mu.Unlock()
-}
-
-type setupForm struct {
-	User      *store.User // always nil: no one is logged in during setup
-	Email     string
-	Secret    string
-	SecretKey string
-	QRSize    int
-	QRPath    string
-	Error     string
-}
-
-func (w *web) setupPage(rw http.ResponseWriter, r *http.Request) {
-	if !w.setup.active() {
-		http.Redirect(rw, r, "/login", http.StatusSeeOther)
-		return
-	}
-	secret, err := auth.NewTOTPSecret()
-	if err != nil {
-		w.fail(rw, r, err)
-		return
-	}
-	w.renderSetup(rw, http.StatusOK, "", secret, "")
-}
-
-func (w *web) completeSetup(rw http.ResponseWriter, r *http.Request) {
-	if !w.setup.active() {
-		http.Redirect(rw, r, "/login", http.StatusSeeOther)
-		return
-	}
-	r.Body = http.MaxBytesReader(rw, r.Body, maxFormBytes)
-	email := strings.TrimSpace(r.PostFormValue("email"))
-	secret, err := auth.DecodeTOTPSecret(r.PostFormValue("totp_secret"))
-	if err != nil {
-		w.render(rw, http.StatusBadRequest, "error", map[string]any{"Message": "The setup form was damaged. Reload the page and start again."})
-		return
-	}
-	retry := func(status int, message string) {
-		w.renderSetup(rw, status, email, secret, message)
-	}
-
-	if !w.loginIP.allow(w.proxies.clientIP(r)) {
-		retry(http.StatusTooManyRequests, "Too many attempts. Wait a few minutes.")
-		return
-	}
-	if !w.setup.matches(r.PostFormValue("setup_code")) {
-		w.log.Warn("setup refused", "reason", "wrong setup code", "remote", w.proxies.clientIP(r))
-		retry(http.StatusUnauthorized, "The setup code is not the one in the dashboard's log.")
-		return
-	}
-	if !validEmail(email) {
-		retry(http.StatusBadRequest, "Enter a valid email address.")
-		return
-	}
-	password := r.PostFormValue("password")
-	if err := auth.CheckPasswordPolicy(password); err != nil {
-		retry(http.StatusBadRequest, "The "+err.Error()+".")
-		return
-	}
-	if password != r.PostFormValue("password_again") {
-		retry(http.StatusBadRequest, "The passwords do not match.")
-		return
-	}
-	step, ok := auth.VerifyTOTP(secret, strings.TrimSpace(r.PostFormValue("code")), w.now())
-	if !ok {
-		retry(http.StatusBadRequest, "The authenticator code does not match. Check the app and the device's clock.")
-		return
-	}
-
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		w.fail(rw, r, err)
-		return
-	}
-	err = w.store.CreateFirstAdmin(r.Context(), email, hash, secret, step, w.now())
-	if err != nil && !errors.Is(err, store.ErrSetupDone) {
-		w.fail(rw, r, err)
-		return
-	}
-	w.setup.finish()
-	if err == nil {
-		w.log.Info("first admin created", "email", email, "remote", w.proxies.clientIP(r))
-	}
-	http.Redirect(rw, r, "/login", http.StatusSeeOther)
-}
-
-func (w *web) renderSetup(rw http.ResponseWriter, status int, email string, secret []byte, message string) {
-	form := setupForm{Email: email, Secret: auth.EncodeTOTPSecret(secret), SecretKey: groupKey(auth.EncodeTOTPSecret(secret)), Error: message}
-	label := "dashboard"
-	if u, err := url.Parse(w.cfg.PublicURL); err == nil && u.Hostname() != "" {
-		label = u.Hostname()
-	}
-	if code, err := qr.Encode(auth.TOTPURI("Best Before", label, secret), qr.M); err == nil {
-		form.QRSize, form.QRPath = code.Size+8, qrPath(code)
-	}
-	w.render(rw, status, "setup", form)
 }
 
 // qrPath draws a QR code as one SVG path, so it is part of the page and needs

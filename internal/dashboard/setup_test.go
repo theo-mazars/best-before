@@ -2,8 +2,8 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -20,29 +20,36 @@ func TestSetup(t *testing.T) {
 		t.Fatalf("setup code %q, %v", code, err)
 	}
 
-	if rec := tw.do(http.MethodGet, "/login", nil, nil); rec.Header().Get("Location") != "/setup" {
-		t.Errorf("login before setup: HTTP %d to %q", rec.Code, rec.Header().Get("Location"))
+	var s sessionView
+	json.Unmarshal(tw.do(http.MethodGet, "/api/ui/session", nil, nil).Body.Bytes(), &s)
+	if !s.Setup {
+		t.Error("session does not ask for setup")
 	}
-	page := tw.do(http.MethodGet, "/setup", nil, nil).Body.String()
-	if !strings.Contains(page, "<svg class=\"qr\"") {
-		t.Error("no QR code on the setup page")
+	var v setupView
+	if rec := tw.do(http.MethodGet, "/api/ui/setup", nil, nil); rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &v) != nil || v.QRPath == "" {
+		t.Fatalf("setup info: HTTP %d %s", rec.Code, rec.Body)
 	}
-	secret := regexp.MustCompile(`name="totp_secret" value="([A-Z2-7]+)"`).FindStringSubmatch(page)[1]
-	key, _ := auth.DecodeTOTPSecret(secret)
+	key, _ := auth.DecodeTOTPSecret(v.Secret)
 
-	form := func(setupCode, password, totp string) url.Values {
-		return url.Values{"setup_code": {setupCode}, "email": {"owner@example.org"}, "password": {password},
-			"password_again": {password}, "totp_secret": {secret}, "code": {totp}}
+	form := func(setupCode, password, totp string) map[string]string {
+		return map[string]string{"setupCode": setupCode, "email": "owner@example.org", "password": password,
+			"passwordAgain": password, "secret": v.Secret, "code": totp}
 	}
 	totp := auth.TOTPCodeAt(key, tw.now)
 
-	for name, f := range map[string]url.Values{
-		"wrong setup code": form("AAAA-BBBB-CCCC-DDDD", testPassword, totp),
-		"short password":   form(code, "short", totp),
-		"wrong TOTP":       form(code, testPassword, "000000"),
+	for name, c := range map[string]struct {
+		form  map[string]string
+		field string
+	}{
+		"wrong setup code": {form("AAAA-BBBB-CCCC-DDDD", testPassword, totp), "setupCode"},
+		"short password":   {form(code, "short", totp), "password"},
+		"wrong TOTP":       {form(code, testPassword, "000000"), "code"},
 	} {
-		if rec := tw.do(http.MethodPost, "/setup", f, nil); rec.Code == http.StatusSeeOther {
-			t.Errorf("%s: accepted", name)
+		rec := tw.json(http.MethodPost, "/api/ui/setup", c.form, nil)
+		var e apiError
+		json.Unmarshal(rec.Body.Bytes(), &e)
+		if rec.Code == http.StatusNoContent || e.Field != c.field {
+			t.Errorf("%s: HTTP %d, field %q", name, rec.Code, e.Field)
 		}
 	}
 	if n, _ := tw.store.CountUsers(ctx); n != 0 {
@@ -50,7 +57,7 @@ func TestSetup(t *testing.T) {
 	}
 
 	lower := strings.ToLower(strings.ReplaceAll(code, "-", " "))
-	if rec := tw.do(http.MethodPost, "/setup", form(lower, testPassword, totp), nil); rec.Code != http.StatusSeeOther {
+	if rec := tw.json(http.MethodPost, "/api/ui/setup", form(lower, testPassword, totp), nil); rec.Code != http.StatusNoContent {
 		t.Fatalf("setup: HTTP %d\n%s", rec.Code, rec.Body)
 	}
 	u, err := tw.store.UserByEmail(ctx, "owner@example.org")
@@ -59,11 +66,11 @@ func TestSetup(t *testing.T) {
 	}
 
 	// Setup is gone for good, even with the right code.
-	if rec := tw.do(http.MethodPost, "/setup", form(code, testPassword, totp), nil); rec.Header().Get("Location") != "/login" {
+	if rec := tw.json(http.MethodPost, "/api/ui/setup", form(code, testPassword, totp), nil); rec.Code != http.StatusConflict {
 		t.Errorf("second setup: HTTP %d", rec.Code)
 	}
-	if rec := tw.do(http.MethodGet, "/login", nil, nil); rec.Code != http.StatusOK {
-		t.Errorf("login after setup: HTTP %d", rec.Code)
+	if rec := tw.do(http.MethodGet, "/api/ui/session", nil, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("session after setup: HTTP %d", rec.Code)
 	}
 	if n, _ := tw.store.CountUsers(ctx); n != 1 {
 		t.Errorf("%d users", n)
@@ -75,7 +82,7 @@ func TestNoSetupWhenUsersExist(t *testing.T) {
 	if code, _ := tw.w.setup.start(context.Background(), tw.store); code != "" {
 		t.Errorf("setup code issued with an admin present: %s", code)
 	}
-	if rec := tw.do(http.MethodGet, "/setup", nil, nil); rec.Header().Get("Location") != "/login" {
-		t.Errorf("setup page: HTTP %d", rec.Code)
+	if rec := tw.do(http.MethodGet, "/api/ui/setup", nil, nil); rec.Code != http.StatusConflict {
+		t.Errorf("setup info: HTTP %d", rec.Code)
 	}
 }
