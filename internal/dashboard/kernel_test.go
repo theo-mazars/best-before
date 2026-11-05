@@ -123,3 +123,42 @@ func TestOldKernelOnServerPage(t *testing.T) {
 		t.Errorf("status %q, packages %+v", v.Server.Status, v.Packages)
 	}
 }
+
+// A vulnerability counts once per host or image, at its most urgent
+// package, and is sent as one line naming every package.
+func TestCountedPerVulnerability(t *testing.T) {
+	at := newAlertTest(t)
+	at.kernel = "6.8.0-60-generic"
+	at.addHook(true, false)
+	cve := func(pkg string, fixed bool) vulns.Finding {
+		f := vulns.Finding{Target: vulns.TargetHost, Package: pkg, Version: "1", Kind: vulns.KindPackage,
+			Vulnerability: "CVE-2026-7000", Severity: "critical", CVSS: 9.8}
+		if fixed {
+			f.FixVersions = []string{"2"}
+		}
+		return f
+	}
+	at.report(1, cve("linux-image-6.8.0-50-generic", true), cve("linux-image-6.8.0-60-generic", false),
+		cve("linux-modules-6.8.0-60-generic", true))
+
+	fs, _ := loadFindings(at.ctx, at.store, at.agent.ID)
+	s := &serverSummary{Severities: newSeverities()}
+	s.count(fs, risks{}, "low", at.now)
+	if s.Critical != 1 || s.NoFixYet != 0 || *s.Severities["critical"] != (severityCount{Open: 1}) {
+		t.Errorf("summary: %+v, critical %+v", s, s.Severities["critical"])
+	}
+	got := at.check()
+	if len(got) != 1 || got[0]["title"] != "Emergency on web-01: 1 vulnerability to fix now" {
+		t.Fatalf("got %v", titles(got))
+	}
+	// Only the package with a fix is an emergency: the old kernel's fix
+	// doesn't count.
+	if text := got[0]["text"]; text != "CVE-2026-7000 in linux-modules-6.8.0-60-generic 1 (host): critical, CVSS 9.8, fixed in 2" {
+		t.Errorf("text: %q", text)
+	}
+	settings, _ := at.store.AlertSettings(at.ctx)
+	d, err := at.al.buildDigest(at.ctx, settings, at.now.Add(-7*24*time.Hour), at.now)
+	if err != nil || len(d.Emergencies) != 1 || len(d.Emergencies[0].Findings) != 1 {
+		t.Errorf("digest: %+v, %v", d, err)
+	}
+}

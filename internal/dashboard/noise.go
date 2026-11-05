@@ -77,3 +77,39 @@ func place(f *store.Finding, rs risks, min string, now time.Time) int {
 	}
 	return placeOpen
 }
+
+// groupByCVE groups findings by host or image and vulnerability, in the
+// order they first appear. A vulnerability in several packages built from
+// the same source, e.g. openssl and libssl3, is one thing to fix there.
+func groupByCVE(fs []store.Finding) [][]store.Finding {
+	var out [][]store.Finding
+	at := map[riskKey]int{}
+	for _, f := range fs {
+		k := riskKey{f.Target, f.Vulnerability}
+		i, ok := at[k]
+		if !ok {
+			i = len(out)
+			at[k] = i
+			out = append(out, nil)
+		}
+		out[i] = append(out[i], f)
+	}
+	return out
+}
+
+// placeUrgency orders places, most urgent first.
+var placeUrgency = map[int]int{placeOpen: 0, placeNoFix: 1, placeBelow: 2, placeAccepted: 3, placeOldKernel: 4}
+
+// placeCVE places a vulnerability on a host or image by its most urgent
+// package, e.g. open if one package has a fix and another not, or if it is
+// in the running kernel as well as an old one. It returns that package's
+// finding.
+func placeCVE(group []store.Finding, rs risks, min string, now time.Time) (int, *store.Finding) {
+	best, at := placeOldKernel, 0
+	for i := range group {
+		if p := place(&group[i], rs, min, now); i == 0 || placeUrgency[p] < placeUrgency[best] {
+			best, at = p, i
+		}
+	}
+	return best, &group[at]
+}

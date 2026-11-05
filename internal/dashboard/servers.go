@@ -13,9 +13,10 @@ import (
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
-// serverSummary is one server on the overview. Counts only include
-// fixable findings the user sees and has not accepted: the others are
-// silent.
+// serverSummary is one server on the overview. Counts are of
+// vulnerabilities, once per host or image whatever the packages they are
+// in, and only include fixable ones the user sees and has not accepted: the
+// others are silent.
 type serverSummary struct {
 	ID              string     `json:"id"`
 	Hostname        string     `json:"hostname"`
@@ -32,9 +33,9 @@ type serverSummary struct {
 	RebootRequired  bool       `json:"rebootRequired"`
 	Images          int        `json:"images"`
 	NotChecked      int        `json:"notChecked"`
-	// Severities counts every finding by severity: open ones count towards
-	// the status, muted ones have no fix, are accepted or are below the
-	// user's threshold.
+	// Severities counts every vulnerability by severity: open ones count
+	// towards the status, muted ones have no fix, are below the user's
+	// threshold, are accepted or are in an old kernel.
 	Severities map[string]*severityCount `json:"severities"`
 	// Problems are gaps in the report, which are never mistaken for a
 	// clean server.
@@ -65,9 +66,11 @@ const (
 	statusOK        = "OK"
 )
 
+// count counts vulnerabilities once per host or image, however many
+// packages they are in.
 func (s *serverSummary) count(findings []store.Finding, rs risks, min string, now time.Time) {
-	for _, f := range findings {
-		p := place(&f, rs, min, now)
+	for _, group := range groupByCVE(findings) {
+		p, f := placeCVE(group, rs, min, now)
 		c := s.Severities[stripSeverity(f.Severity)]
 		if p == placeOpen {
 			c.Open++

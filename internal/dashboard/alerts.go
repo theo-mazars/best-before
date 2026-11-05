@@ -298,9 +298,11 @@ func emergencyMessage(ag *store.Agent, alerts []store.Alert, current map[string]
 	var lines []string
 	var details []vulnDetails
 	for _, al := range alerts {
+		for _, group := range groupByCVE(current[al.Vulnerability]) {
+			lines = append(lines, findingLine(group, names.where(group[0].Target)))
+		}
 		for _, f := range current[al.Vulnerability] {
 			where := names.where(f.Target)
-			lines = append(lines, findingLine(&f, where))
 			details = append(details, vulnDetails{
 				ID: f.Vulnerability, Package: f.Package, Version: f.Version, Where: where, Severity: f.Severity,
 				CVSS: f.CVSS, KnownExploited: f.KnownExploited, FixedIn: f.FixVersions, URL: f.URL,
@@ -314,8 +316,10 @@ func emergencyMessage(ag *store.Agent, alerts []store.Alert, current map[string]
 	}
 }
 
-// findingLine describes a finding on one line of plain text.
-func findingLine(f *store.Finding, where string) string {
+// findingLine describes a vulnerability on a host or image on one line of
+// plain text, with every package it is in there.
+func findingLine(group []store.Finding, where string) string {
+	f := &group[0]
 	var why []string
 	if f.KnownExploited {
 		why = append(why, "known exploited")
@@ -324,8 +328,14 @@ func findingLine(f *store.Finding, where string) string {
 	if f.CVSS > 0 {
 		why = append(why, fmt.Sprintf("CVSS %.1f", f.CVSS))
 	}
-	return notify.Clean(fmt.Sprintf("%s in %s %s (%s): %s, fixed in %s",
-		f.Vulnerability, f.Package, f.Version, where, strings.Join(why, ", "), strings.Join(f.FixVersions, ", ")))
+	var pkgs, fixes []string
+	for _, g := range group {
+		pkgs = append(pkgs, g.Package+" "+g.Version)
+		fixes = append(fixes, g.FixVersions...)
+	}
+	slices.Sort(fixes)
+	return notify.Clean(fmt.Sprintf("%s in %s (%s): %s, fixed in %s",
+		f.Vulnerability, strings.Join(pkgs, ", "), where, strings.Join(why, ", "), strings.Join(slices.Compact(fixes), ", ")))
 }
 
 func serverDetails(ag *store.Agent) map[string]string {

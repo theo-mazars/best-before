@@ -49,6 +49,10 @@
 	let withdrawing = $state<{ pkg: PackageRow; cve: Cve } | null>(null);
 
 	const refresh = () => invalidate('app:server');
+	// Vulnerabilities count once per host or image, as on the overview.
+	const cveCount = $derived(
+		v ? Object.values(v.server.severities).reduce((n, c) => n + c.open + c.muted, 0) : 0
+	);
 
 	const stats = $derived(
 		v
@@ -202,7 +206,7 @@
 				<Tabs.List>
 					<Tabs.Trigger value="vulnerabilities">
 						Vulnerabilities
-						<span class="text-xs text-muted-foreground tabular-nums">{v.packages.length}</span>
+						<span class="text-xs text-muted-foreground tabular-nums">{cveCount}</span>
 					</Tabs.Trigger>
 					<Tabs.Trigger value="updates">
 						Updates

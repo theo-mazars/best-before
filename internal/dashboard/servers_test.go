@@ -233,6 +233,16 @@ func TestThresholdAndAcceptedRisks(t *testing.T) {
 		t.Errorf("unknown threshold: HTTP %d", rec.Code)
 	}
 	v := tw.server(admin, a.ID)
+	// openssl and libssl3 share one vulnerability: it counts once, but each
+	// package lists it.
+	if v.Server.Critical != 1 || *v.Server.Severities["critical"] != (severityCount{Open: 1}) {
+		t.Errorf("counted per package: %+v, critical %+v", v.Server, v.Server.Severities["critical"])
+	}
+	for _, pkg := range []string{"openssl", "libssl3"} {
+		if c := v.cve(pkg, "CVE-2026-0001"); c == nil || c.State != "open" {
+			t.Errorf("%s: %+v", pkg, c)
+		}
+	}
 	if c := v.cve("curl", "CVE-2026-0002"); c == nil || c.State != "below" || c.FixVersions[0] != "8.5.1" {
 		t.Errorf("below the threshold: %+v", c)
 	}
@@ -276,7 +286,8 @@ func TestThresholdAndAcceptedRisks(t *testing.T) {
 			t.Errorf("%s accepted: %+v", pkg, c)
 		}
 	}
-	if v.Server.Status != statusCritical || v.Server.Accepted != 2 {
+	// One vulnerability, in two packages: accepted once.
+	if v.Server.Status != statusCritical || v.Server.Accepted != 1 {
 		t.Errorf("after accepting openssl: %+v", v.Server)
 	}
 

@@ -196,8 +196,14 @@ status. A runtime whose variable gives no precise version (`REDIS_VERSION=7`)
 is listed as not checked.
 
 Only vulnerabilities **with a fix available** count towards a server's status.
-Those without one are listed on the server's page under **No fix yet**, and
-move up once a fix is published.
+Those without one are listed on the server's page, greyed out and marked
+**No fix yet**, and count once a fix is published.
+
+A vulnerability counts once on the host, and once in each image, whatever the
+number of packages it is in there: openssl and libssl3, or the packages of
+one kernel, are built from the same source and fixed together. It counts as
+its most urgent package: if one of them has a fix, it has one. The server's
+page still lists it under each package, which is what gets updated.
 
 ## Alerts and digest
 

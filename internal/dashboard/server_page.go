@@ -282,17 +282,10 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 			c.Risk = &riskView{Reason: risk.Reason, AcceptedBy: risk.AcceptedBy, AcceptedAt: risk.AcceptedAt, ExpiresAt: risk.ExpiresAt}
 		}
 		p.CVEs = append(p.CVEs, c)
-		sev := stripSeverity(f.Severity)
-		counts := []map[string]*severityCount{p.Severities}
-		if iv := images[f.Target]; iv != nil {
-			counts = append(counts, iv.Severities)
-		}
-		for _, m := range counts {
-			if pl == placeOpen {
-				m[sev].Open++
-			} else {
-				m[sev].Muted++
-			}
+		if sev := stripSeverity(f.Severity); pl == placeOpen {
+			p.Severities[sev].Open++
+		} else {
+			p.Severities[sev].Muted++
 		}
 		if pl == placeOpen {
 			p.Muted = false
@@ -311,6 +304,17 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 				k.Packages = append(k.Packages, f.Package)
 			}
 			kernelCVEs[abi][f.Vulnerability] = true
+		}
+	}
+	// An image counts each vulnerability once, as the server does.
+	for _, group := range groupByCVE(st.findings) {
+		if iv := images[group[0].Target]; iv != nil {
+			pl, f := placeCVE(group, st.risks, u.MinSeverity, now)
+			if sev := stripSeverity(f.Severity); pl == placeOpen {
+				iv.Severities[sev].Open++
+			} else {
+				iv.Severities[sev].Muted++
+			}
 		}
 	}
 	for abi, k := range kernels {
