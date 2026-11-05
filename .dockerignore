@@ -1,5 +1,5 @@
-# The image is built from source: only the Go module, the licence and the
-# image's files.
+# The image is built from source: only the Go module, the web interface, the
+# licence and the image's files.
 *
 !LICENSE
 !go.mod
@@ -7,4 +7,8 @@
 !cmd/
 !internal/
 !packaging/docker/
+!ui/
+ui/node_modules/
+ui/.svelte-kit/
+internal/dashboard/webui/dist/
 **/*_test.go

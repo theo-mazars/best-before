@@ -45,11 +45,11 @@ Best Before watches the system, not your applications: the programs inside an im
 
 ## Development
 
-Building and testing need only Go (see `go.mod` for the version), on Linux or macOS.
+Building and testing need Go (see `go.mod` for the version) and, for the dashboard's web interface, Node (see `ui/.nvmrc`), on Linux or macOS. The agent needs only Go.
 
 ```sh
-make build   # binaries in ./bin
-make check   # formatting, vet and tests: run this before pushing
+make build   # web interface, then binaries in ./bin
+make check   # formatting, vet and tests, Go and web interface: run this before pushing
 make image   # the dashboard's container image
 make dist VERSION=v0.1.0-rc.1   # a release, unsigned: agent packages, source, SBOMs, checksums
 ```

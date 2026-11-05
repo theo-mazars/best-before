@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,23 +112,34 @@ func TestLoginBehindProxy(t *testing.T) {
 	tw.addUser("admin@example.org", store.RoleAdmin)
 
 	login := func(proto string) *http.Cookie {
-		form := url.Values{"email": {"admin@example.org"}, "password": {testPassword}, "code": {auth.TOTPCodeAt(tw.secret, tw.now)}}
-		req := httptest.NewRequest(http.MethodPost, "http://dashboard.vpn/login", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.RemoteAddr = "10.0.1.9:40000"
-		req.Header.Set("X-Forwarded-For", "10.8.0.4")
-		req.Header.Set("X-Forwarded-Proto", proto)
-		rec := httptest.NewRecorder()
-		tw.mux.ServeHTTP(rec, req)
+		post := func(path, body string, c *http.Cookie) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodPost, "http://dashboard.vpn"+path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.RemoteAddr = "10.0.1.9:40000"
+			req.Header.Set("X-Forwarded-For", "10.8.0.4")
+			req.Header.Set("X-Forwarded-Proto", proto)
+			if c != nil {
+				req.AddCookie(c)
+			}
+			rec := httptest.NewRecorder()
+			tw.mux.ServeHTTP(rec, req)
+			return rec
+		}
+		rec := post("/api/ui/login", `{"email":"admin@example.org","password":"`+testPassword+`"}`, nil)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("password over %s: HTTP %d", proto, rec.Code)
+		}
+		rec = post("/api/ui/login/code", `{"code":"`+auth.TOTPCodeAt(tw.secret, tw.now)+`"}`, rec.Result().Cookies()[0])
 		cookies := rec.Result().Cookies()
-		if rec.Code != http.StatusSeeOther || len(cookies) != 1 {
+		// The pending login's cookie is cleared, then the session's is set.
+		if rec.Code != http.StatusNoContent || len(cookies) != 2 {
 			t.Fatalf("login over %s: HTTP %d, cookies %v", proto, rec.Code, cookies)
 		}
 		if hsts := rec.Header().Get("Strict-Transport-Security"); (hsts != "") != (proto == "https") {
 			t.Errorf("over %s: HSTS %q", proto, hsts)
 		}
 		tw.now = tw.now.Add(30 * 1e9)
-		return cookies[0]
+		return cookies[1]
 	}
 
 	plain := login("http")

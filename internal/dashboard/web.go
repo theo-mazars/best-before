@@ -3,7 +3,6 @@ package dashboard
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -16,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theo-mazars/best-before/internal/dashboard/auth"
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
 	"github.com/theo-mazars/best-before/internal/dashboard/vulns"
 	"github.com/theo-mazars/best-before/internal/protocol"
@@ -47,6 +45,8 @@ type web struct {
 	loginIP    *rateLimiter
 	loginEmail *rateLimiter
 	pages      map[string]*template.Template
+	spa        *spa
+	pending    pendingLogins
 	setup      setup
 	sealer     *sealer
 	alerts     *alerter
@@ -66,8 +66,12 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		pages:      map[string]*template.Template{},
 		sealer:     newSealer(key),
 	}
+	var err error
+	if w.spa, err = newSPA(); err != nil {
+		return nil, err
+	}
 	funcs := template.FuncMap{"date": formatDate, "join": strings.Join, "duration": formatDuration}
-	for _, page := range []string{"login", "setup", "agents", "code", "error", "overview", "server", "risk", "settings", "channel"} {
+	for _, page := range []string{"agents", "code", "error", "overview", "server", "risk", "settings", "channel"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -83,10 +87,16 @@ func (w *web) routes(mux *http.ServeMux) {
 	page := func(h http.Handler) http.Handler { return w.headers(csrf.Handler(h)) }
 
 	mux.Handle("GET /static/", w.headers(http.StripPrefix("/static/", http.FileServerFS(static))))
-	mux.Handle("GET /setup", page(http.HandlerFunc(w.setupPage)))
-	mux.Handle("POST /setup", page(http.HandlerFunc(w.completeSetup)))
-	mux.Handle("GET /login", page(http.HandlerFunc(w.loginPage)))
-	mux.Handle("POST /login", page(http.HandlerFunc(w.login)))
+	mux.Handle("GET /", w.headers(w.spa))
+	mux.Handle("GET /api/ui/session", page(http.HandlerFunc(w.session)))
+	mux.Handle("POST /api/ui/login", page(http.HandlerFunc(w.login)))
+	mux.Handle("POST /api/ui/login/code", page(http.HandlerFunc(w.loginCode)))
+	mux.Handle("POST /api/ui/logout", page(http.HandlerFunc(w.apiLogout)))
+	mux.Handle("GET /api/ui/setup", page(http.HandlerFunc(w.setupInfo)))
+	mux.Handle("POST /api/ui/setup", page(http.HandlerFunc(w.completeSetup)))
+	for _, m := range []string{"GET", "POST", "PUT", "DELETE"} {
+		mux.Handle(m+" /api/ui/", page(http.HandlerFunc(w.apiNotFound)))
+	}
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
 	mux.Handle("GET /{$}", page(w.admin(w.overview)))
 	mux.Handle("GET /servers/{id}", page(w.admin(w.serverPage)))
@@ -111,7 +121,7 @@ func (w *web) routes(mux *http.ServeMux) {
 func (w *web) headers(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		hd := rw.Header()
-		hd.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		hd.Set("Content-Security-Policy", w.spa.csp)
 		hd.Set("X-Content-Type-Options", "nosniff")
 		hd.Set("X-Frame-Options", "DENY")
 		hd.Set("Referrer-Policy", "no-referrer")
@@ -126,103 +136,28 @@ func (w *web) headers(h http.Handler) http.Handler {
 // admin requires a session of a user with the admin role.
 func (w *web) admin(h func(http.ResponseWriter, *http.Request, *store.User)) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(w.cookieName(r))
-		if err != nil {
-			http.Redirect(rw, r, "/login", http.StatusSeeOther)
-			return
-		}
-		sess, err := w.store.TouchSession(r.Context(), hashToken(c.Value), w.now(), sessionIdle)
-		if errors.Is(err, store.ErrNotFound) {
-			w.clearSession(rw, r)
-			http.Redirect(rw, r, "/login", http.StatusSeeOther)
-			return
-		}
+		u, err := w.currentUser(rw, r)
 		if err != nil {
 			w.fail(rw, r, err)
 			return
 		}
-		if sess.User.Role != store.RoleAdmin {
+		if u == nil {
+			http.Redirect(rw, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if u.Role != store.RoleAdmin {
 			w.render(rw, http.StatusForbidden, "error", map[string]any{"Message": "This page is for administrators only."})
 			return
 		}
-		h(rw, r, &sess.User)
+		h(rw, r, u)
 	})
-}
-
-func (w *web) loginPage(rw http.ResponseWriter, r *http.Request) {
-	if w.setup.active() {
-		http.Redirect(rw, r, "/setup", http.StatusSeeOther)
-		return
-	}
-	w.render(rw, http.StatusOK, "login", nil)
-}
-
-func (w *web) login(rw http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(rw, r.Body, maxFormBytes)
-	email := strings.TrimSpace(r.PostFormValue("email"))
-	password := r.PostFormValue("password")
-	code := strings.TrimSpace(r.PostFormValue("code"))
-	ip := w.proxies.clientIP(r)
-
-	refuse := func(reason string) {
-		w.log.Warn("login refused", "reason", reason, "email", email, "remote", ip)
-		w.render(rw, http.StatusUnauthorized, "login", map[string]any{
-			"Email": email,
-			"Error": "Email, password or code is incorrect, or there have been too many attempts. Try again in a few minutes.",
-		})
-	}
-	if !w.loginIP.allow(ip) || !w.loginEmail.allow(strings.ToLower(email)) {
-		refuse("rate limited")
-		return
-	}
-
-	u, err := w.store.UserByEmail(r.Context(), email)
-	if errors.Is(err, store.ErrNotFound) {
-		auth.SpendVerificationTime(password)
-		refuse("unknown email")
-		return
-	}
-	if err != nil {
-		w.fail(rw, r, err)
-		return
-	}
-	if err := auth.VerifyPassword(password, u.PasswordHash); err != nil {
-		refuse("wrong password")
-		return
-	}
-	step, ok := auth.VerifyTOTP(u.TOTPSecret, code, w.now())
-	if !ok || len(u.TOTPSecret) == 0 {
-		refuse("wrong code")
-		return
-	}
-	if err := w.store.UseTOTPStep(r.Context(), u.ID, step); err != nil {
-		refuse("code reused")
-		return
-	}
-
-	token := rand.Text()
-	now := w.now()
-	if err := w.store.CreateSession(r.Context(), hashToken(token), u.ID, now, now.Add(sessionLifetime)); err != nil {
-		w.fail(rw, r, err)
-		return
-	}
-	http.SetCookie(rw, &http.Cookie{
-		Name: w.cookieName(r), Value: token, Path: "/",
-		Secure: w.proxies.https(r), HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		MaxAge: int(sessionLifetime.Seconds()),
-	})
-	w.log.Info("logged in", "email", u.Email, "remote", ip)
-	http.Redirect(rw, r, "/", http.StatusSeeOther)
 }
 
 func (w *web) logout(rw http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(w.cookieName(r)); err == nil {
-		if err := w.store.DeleteSession(r.Context(), hashToken(c.Value)); err != nil {
-			w.fail(rw, r, err)
-			return
-		}
+	if err := w.endSession(rw, r); err != nil {
+		w.fail(rw, r, err)
+		return
 	}
-	w.clearSession(rw, r)
 	http.Redirect(rw, r, "/login", http.StatusSeeOther)
 }
 
@@ -349,7 +284,7 @@ func (w *web) render(rw http.ResponseWriter, status int, page string, data any) 
 
 func (w *web) fail(rw http.ResponseWriter, r *http.Request, err error) {
 	w.log.Error("request failed", "path", r.URL.Path, "error", err)
-	w.render(rw, http.StatusInternalServerError, "error", map[string]any{"Message": "Something went wrong on the dashboard. The details are in its log."})
+	w.render(rw, http.StatusInternalServerError, "error", map[string]any{"Message": failMessage})
 }
 
 func (w *web) cleanSessions(ctx context.Context) {
