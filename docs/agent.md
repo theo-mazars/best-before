@@ -27,8 +27,9 @@ To build the package yourself instead, see
 
 ## Enrolling
 
-In the dashboard, **Agents › Add a server** creates a one-time code, valid for
-an hour. On the server:
+In the dashboard, **Agents › Add server** creates a one-time code, valid for
+an hour. It is shown only once: copy the command before closing the dialog.
+On the server:
 
 ```sh
 sudo bestbefore-agent enrol bb1_…
@@ -38,6 +39,10 @@ sudo systemctl start bestbefore-agent.service    # first report now, not tomorro
 The code tells the agent where the dashboard is and how to recognise it: the
 agent checks the dashboard's identity before sending anything, and pins it.
 The server then appears on the Agents page.
+
+Until it is used or expires, a code is listed under **Active enrolment codes**
+on the Agents page. Treat it as a password: if it may have leaked, **Revoke**
+it there, and it can no longer enrol a server.
 
 For unattended installs (Ansible, cloud-init), pass the Docker choice
 explicitly, as there is no one to ask:
@@ -210,14 +215,17 @@ shows it as stale.
 
 ## Re-enrolling and removing
 
-To enrol a server again with a new key, revoke the old agent on the Agents
-page, then:
+To revoke an agent, open the **⋯** menu on its row on the Agents page, choose
+**Revoke** and type its hostname to confirm. The dashboard refuses its reports
+from then on. Revoked agents stay listed, hidden by the Status filter.
+
+To enrol a server again with a new key, revoke the old agent, then:
 
 ```sh
 sudo bestbefore-agent enrol bb1_… --force
 ```
 
-To remove the agent, purge its package, then revoke it on the Agents page:
+To remove the agent, purge its package, then revoke it:
 
 ```sh
 sudo apt purge bestbefore-agent

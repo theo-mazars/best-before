@@ -152,8 +152,10 @@ bb user delete --email someone@example.org
 
 ## Adding servers
 
-In the dashboard, **Agents › Add a server** shows a one-time command to run on
-the server. See [the agent's documentation](agent.md).
+In the dashboard, **Agents › Add server** shows a one-time command to run on
+the server. Unused codes are listed under **Active enrolment codes** until they
+expire, each with a **Revoke** button. See
+[the agent's documentation](agent.md#enrolling).
 
 A server is shown as **stale** when it has not reported for `stale_after`
 (48 hours by default): silence is a problem, never a clean server.

@@ -18,10 +18,10 @@
 
 	let { session, servers }: { session: Session; servers: ServerSummary[] } = $props();
 
-	// Agents and settings are still server pages: they need a full load.
+	// Settings is still a server page: it needs a full load.
 	const nav = [
-		{ href: '/agents', label: 'Agents', icon: KeyRoundIcon },
-		{ href: '/settings', label: 'Settings', icon: SettingsIcon }
+		{ href: resolve('/(app)/agents'), label: 'Agents', icon: KeyRoundIcon, reload: false },
+		{ href: '/settings', label: 'Settings', icon: SettingsIcon, reload: true }
 	];
 
 	// The first servers, worst first as the API sorts them, for quick access.
@@ -120,7 +120,7 @@
 						>
 							{#snippet child({ props })}
 								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- server pages until migrated -->
-								<a href={item.href} data-sveltekit-reload {...props}>
+								<a href={item.href} data-sveltekit-reload={item.reload || undefined} {...props}>
 									<item.icon />
 									<span>{item.label}</span>
 								</a>

@@ -129,3 +129,21 @@ export type ServerPage = {
 	images: ImageInfo[];
 	risk: { min: string; max: string; default: string };
 };
+
+export type Agent = {
+	id: string;
+	hostname: string;
+	status: string;
+	fingerprint: string;
+	agentVersion: string;
+	enrolledAt: string;
+	enrolledFrom: string;
+	lastReportAt: string | null;
+	revokedAt: string | null;
+};
+
+export type ActiveCode = { id: string; createdBy: string; createdAt: string; expiresAt: string };
+
+export type AgentsPage = { agents: Agent[]; codes: ActiveCode[]; canEnrol: boolean };
+
+export type EnrolmentCode = { command: string; expiresAt: string };

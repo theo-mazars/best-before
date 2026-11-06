@@ -37,6 +37,10 @@ const (
 		VALUES (?, ?, ?, ?, ?)`
 	selectEnrolmentCode = `SELECT id, expires_at, used_at FROM enrolment_codes WHERE secret_hash = ?`
 	useEnrolmentCode    = `UPDATE enrolment_codes SET used_at = ?, agent_id = ? WHERE id = ?`
+	selectActiveCodes   = `SELECT c.id, coalesce(u.email, ''), c.created_at, c.expires_at
+		FROM enrolment_codes c LEFT JOIN users u ON u.id = c.created_by
+		WHERE c.used_at IS NULL AND c.expires_at > ? ORDER BY c.created_at`
+	deleteUnusedCode = `DELETE FROM enrolment_codes WHERE id = ? AND used_at IS NULL AND expires_at > ?`
 
 	insertAgent = `INSERT INTO agents (id, public_key, hostname, agent_version, enrolled_at, enrolled_from_ip)
 		VALUES (?, ?, ?, ?, ?, ?)`
@@ -63,6 +67,48 @@ func (s *Store) CreateEnrolmentCode(ctx context.Context, secretHash [32]byte, cr
 	_, err := s.db.ExecContext(ctx, insertEnrolmentCode,
 		newID(), secretHash[:], nullString(createdBy), unix(now), unix(expires))
 	return err
+}
+
+// EnrolmentCode is a code that can still enrol a server. Its secret is not
+// stored, so it cannot be shown again.
+type EnrolmentCode struct {
+	ID        string
+	CreatedBy string // email, "" from the command line or a deleted user
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// ActiveEnrolmentCodes lists the codes neither used nor expired, oldest first.
+func (s *Store) ActiveEnrolmentCodes(ctx context.Context, now time.Time) ([]EnrolmentCode, error) {
+	rows, err := s.db.QueryContext(ctx, selectActiveCodes, unix(now))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var codes []EnrolmentCode
+	for rows.Next() {
+		var c EnrolmentCode
+		var created, expires int64
+		if err := rows.Scan(&c.ID, &c.CreatedBy, &created, &expires); err != nil {
+			return nil, err
+		}
+		c.CreatedAt, c.ExpiresAt = time.Unix(created, 0).UTC(), time.Unix(expires, 0).UTC()
+		codes = append(codes, c)
+	}
+	return codes, rows.Err()
+}
+
+// RevokeEnrolmentCode deletes a code that is still active, so it can no
+// longer enrol a server. It fails with ErrNotFound otherwise.
+func (s *Store) RevokeEnrolmentCode(ctx context.Context, id string, now time.Time) error {
+	res, err := s.db.ExecContext(ctx, deleteUnusedCode, id, unix(now))
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // RedeemEnrolmentCode enrols an agent. A code works once, and a failed

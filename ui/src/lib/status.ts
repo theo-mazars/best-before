@@ -40,6 +40,24 @@ export function statusLook(status: string) {
 	return looks[status] ?? { label: status, class: 'border-border text-muted-foreground' };
 }
 
+export const agentStatuses = ['stale', 'waiting', 'reporting', 'revoked'] as const;
+
+const agentLooks: Record<string, { label: string; class: string }> = {
+	stale: looks.stale,
+	waiting: looks['waiting for first report'],
+	reporting: { ...looks.OK, label: 'Reporting' },
+	revoked: { label: 'Revoked', class: 'bg-muted text-muted-foreground' }
+};
+
+export function agentLook(status: string) {
+	return agentLooks[status] ?? statusLook(status);
+}
+
+export function agentRank(status: string): number {
+	const i = (agentStatuses as readonly string[]).indexOf(status);
+	return i < 0 ? agentStatuses.length : i;
+}
+
 export function statusRank(status: string): number {
 	const i = (statuses as readonly string[]).indexOf(status);
 	return i < 0 ? statuses.length : i;
