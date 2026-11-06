@@ -140,7 +140,7 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 			}
 		}
 
-		findings, err := a.store.Findings(ctx, ag.ID)
+		findings, err := loadFindings(ctx, a.store, ag.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -151,25 +151,51 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 		emergencies := digestServer{Hostname: host, URL: url}
 		fresh := digestServer{Hostname: host, URL: url}
 		expiring := digestServer{Hostname: host, URL: url}
+		var current []store.Finding
 		for _, f := range findings {
-			line := digestFinding{Line: findingLine(&f, names.where(f.Target)), URL: f.URL}
+			if !f.OldKernel {
+				current = append(current, f)
+			}
+		}
+		// One line per vulnerability on a host or image, naming the packages
+		// that make it worth a line.
+		for _, group := range groupByCVE(current) {
+			where := names.where(group[0].Target)
+			pick := func(ok func(f *store.Finding) bool) []store.Finding {
+				var out []store.Finding
+				for _, f := range group {
+					if ok(&f) {
+						out = append(out, f)
+					}
+				}
+				return out
+			}
+			first := &group[0]
 			// An acceptance that ended since the last digest, or ends within
 			// a week, is worth a look; one without a fix stays silent.
-			if r, ok := rs.of(&f); ok && s.DigestAccepted && f.Fixable() &&
+			if r, ok := rs.of(first); ok && s.DigestAccepted &&
 				r.ExpiresAt.After(since) && !r.ExpiresAt.After(now.Add(7*24*time.Hour)) {
-				expiring.Findings = append(expiring.Findings, digestFinding{Line: line.Line, Note: acceptedNote(&r, now), URL: f.URL})
-			}
-			switch {
-			case rs.active(&f, now) != nil:
-				// Accepted: neither an emergency nor new until it expires.
-			case isEmergency(&f, s):
-				// Sent when found; never repeated as new.
-				if s.DigestEmergencies {
-					emergencies.Findings = append(emergencies.Findings, line)
+				if fixable := pick((*store.Finding).Fixable); len(fixable) > 0 {
+					expiring.Findings = append(expiring.Findings,
+						digestFinding{Line: findingLine(fixable, where), Note: acceptedNote(&r, now), URL: first.URL})
 				}
-			case s.DigestNewMinSeverity != "" && f.Fixable() && severityRank(f.Severity) >= severityRank(s.DigestNewMinSeverity) &&
-				(!f.FirstSeenAt.Before(since) || !f.FixableSince.Before(since)):
-				fresh.Findings = append(fresh.Findings, line)
+			}
+			if rs.active(first, now) != nil {
+				continue // accepted: neither an emergency nor new until it expires
+			}
+			// Emergencies are sent when found; never repeated as new.
+			if urgent := pick(func(f *store.Finding) bool { return isEmergency(f, s) }); len(urgent) > 0 {
+				if s.DigestEmergencies {
+					emergencies.Findings = append(emergencies.Findings, digestFinding{Line: findingLine(urgent, where), URL: first.URL})
+				}
+				continue
+			}
+			news := pick(func(f *store.Finding) bool {
+				return s.DigestNewMinSeverity != "" && f.Fixable() && severityRank(f.Severity) >= severityRank(s.DigestNewMinSeverity) &&
+					(!f.FirstSeenAt.Before(since) || !f.FixableSince.Before(since))
+			})
+			if len(news) > 0 {
+				fresh.Findings = append(fresh.Findings, digestFinding{Line: findingLine(news, where), URL: first.URL})
 			}
 		}
 		if len(emergencies.Findings) > 0 {

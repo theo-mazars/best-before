@@ -21,8 +21,11 @@ type Finding struct {
 	FixVersions    []string // empty when no fix exists
 	KnownExploited bool
 	URL            string
-	FirstSeenAt    time.Time
-	FixableSince   *time.Time
+	// OldKernel is set by the dashboard, not stored: the package is a
+	// kernel installed but not running.
+	OldKernel    bool
+	FirstSeenAt  time.Time
+	FixableSince *time.Time
 }
 
 func (f *Finding) Fixable() bool { return len(f.FixVersions) > 0 }
@@ -45,8 +48,13 @@ const (
 	selectReports = `SELECT agent_id, received_at, sequence, body, matched_sequence, matched_at, matched_db_built,
 		unchecked FROM latest_reports`
 	selectReport    = selectReports + ` WHERE agent_id = ?`
+	selectKernel    = `SELECT coalesce(json_extract(body, '$.host.kernel'), '') FROM latest_reports WHERE agent_id = ?`
 	selectAgentSeqs = `SELECT r.agent_id, r.sequence FROM latest_reports r
 		JOIN agents a ON a.id = r.agent_id WHERE a.revoked_at IS NULL`
+	selectUnmatched = `SELECT r.agent_id FROM latest_reports r
+		JOIN agents a ON a.id = r.agent_id WHERE a.revoked_at IS NULL
+		AND (r.matched_sequence IS NULL OR r.matched_sequence != r.sequence
+			OR r.matched_db_built IS NULL OR r.matched_db_built < ?)`
 
 	selectFindingHistory = `SELECT target, package, vulnerability, first_seen_at, fixable_since
 		FROM findings WHERE agent_id = ?`
@@ -109,6 +117,36 @@ func scanReport(row interface{ Scan(...any) error }) (*Report, error) {
 	r.MatchedDBBuilt = fromUnix(built)
 	r.Matched = matchedSeq.Valid && uint64(matchedSeq.Int64) == r.Sequence
 	return &r, nil
+}
+
+// RunningKernel returns the kernel release in the agent's latest report,
+// e.g. 6.8.0-60-generic, or "" before the first report.
+func (s *Store) RunningKernel(ctx context.Context, agentID string) (string, error) {
+	var k string
+	err := s.db.QueryRowContext(ctx, selectKernel, agentID).Scan(&k)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return k, err
+}
+
+// UnmatchedReports lists the agents, not revoked, whose latest report has
+// not been matched, or was matched against a database built before built.
+func (s *Store) UnmatchedReports(ctx context.Context, built time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, selectUnmatched, unix(built))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ReportSequences lists the latest report of every agent not revoked, for

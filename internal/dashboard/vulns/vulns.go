@@ -82,9 +82,15 @@ type DB struct {
 	dir string
 	log *slog.Logger
 
+	// mu guards the database in use: matching holds it, for minutes on a
+	// large report, and a reload waits for it.
 	mu       sync.RWMutex
 	provider vulnerability.Provider
 	reader   v6.Reader // to ask which distributions the database covers
+
+	// statusMu guards status alone, so that pages asking for it never wait
+	// for matching.
+	statusMu sync.Mutex
 	status   Status
 }
 
@@ -127,9 +133,9 @@ func (db *DB) Update(ctx context.Context) (bool, error) {
 		return false, db.failed(fmt.Errorf("updating the vulnerability database: %w", err))
 	}
 	if !updated && db.Status().Ready {
-		db.mu.Lock()
+		db.statusMu.Lock()
 		db.status.LastError = ""
-		db.mu.Unlock()
+		db.statusMu.Unlock()
 		return false, nil
 	}
 	if err := db.reload(); err != nil {
@@ -139,9 +145,9 @@ func (db *DB) Update(ctx context.Context) (bool, error) {
 }
 
 func (db *DB) failed(err error) error {
-	db.mu.Lock()
+	db.statusMu.Lock()
 	db.status.LastError = err.Error()
-	db.mu.Unlock()
+	db.statusMu.Unlock()
 	return err
 }
 
@@ -169,8 +175,10 @@ func (db *DB) reload() error {
 	old := db.provider
 	db.provider = v6.NewVulnerabilityProvider(reader)
 	db.reader = reader
-	db.status = Status{Ready: true, Built: status.Built.UTC()}
 	db.mu.Unlock()
+	db.statusMu.Lock()
+	db.status = Status{Ready: true, Built: status.Built.UTC()}
+	db.statusMu.Unlock()
 	if old != nil {
 		old.Close()
 	}
@@ -195,8 +203,8 @@ func (db *DB) covers(d *distro.Distro) (bool, error) {
 }
 
 func (db *DB) Status() Status {
-	db.mu.RLock()
-	defer db.mu.RUnlock()
+	db.statusMu.Lock()
+	defer db.statusMu.Unlock()
 	return db.status
 }
 
@@ -209,7 +217,9 @@ func (db *DB) Close() error {
 	err := db.provider.Close()
 	db.provider = nil
 	db.reader = nil
+	db.statusMu.Lock()
 	db.status.Ready = false
+	db.statusMu.Unlock()
 	return err
 }
 

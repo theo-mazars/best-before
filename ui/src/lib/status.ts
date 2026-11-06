@@ -33,6 +33,9 @@ const looks: Record<string, { label: string; class: string }> = {
 	}
 };
 
+export const statusRule =
+	'Critical: a vulnerability worth an emergency alert (Settings › What is worth sending). Needs attention: security updates to install, a reboot, or gaps in the report. OK: nothing to do now.';
+
 export function statusLook(status: string) {
 	return looks[status] ?? { label: status, class: 'border-border text-muted-foreground' };
 }
@@ -50,14 +53,21 @@ function plural(n: number, one: string, many = one + 's') {
 export function worstIssue(s: ServerSummary): string {
 	if (s.status === 'waiting for first report') return 'Waiting for first report';
 	if (s.status === 'stale') return 'Stopped reporting';
-	if (s.knownExploited) return `${s.knownExploited} known exploited`;
-	if (s.critical) return `${s.critical} critical`;
+	if (s.emergencies) return `${s.emergencies} to fix now`;
 	if (s.status === 'not checked yet') return 'Not checked yet';
-	if (s.high) return `${s.high} high`;
 	if (s.securityUpdates) return plural(s.securityUpdates, 'security update');
 	if (s.rebootRequired) return 'Reboot required';
-	if (s.medium) return `${s.medium} medium`;
 	if (s.notChecked) return plural(s.notChecked, 'image') + ' not checked';
 	if (s.problems.length) return 'Report incomplete';
 	return '—';
 }
+
+// focuses are the overview's cards: each one shows the servers it counts.
+export const focuses = {
+	action: { label: 'Needing action', test: (s: ServerSummary) => s.status !== 'OK' },
+	fixNow: { label: 'To fix now', test: (s: ServerSummary) => s.emergencies > 0 },
+	exploited: { label: 'Known exploited', test: (s: ServerSummary) => s.knownExploited > 0 },
+	updates: { label: 'Security updates', test: (s: ServerSummary) => s.securityUpdates > 0 },
+	reboot: { label: 'Reboots pending', test: (s: ServerSummary) => s.rebootRequired }
+} as const;
+export type Focus = keyof typeof focuses;

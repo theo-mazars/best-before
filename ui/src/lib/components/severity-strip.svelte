@@ -30,7 +30,7 @@
 				<span>{c.open || c.muted}</span><span class="opacity-70">{box.letter}</span>
 			</Tooltip.Trigger>
 			<Tooltip.Content>
-				{box.name}: {c.open} open · {c.muted} no fix, accepted or below threshold
+				{box.name}: {c.open} open · {c.muted} muted
 			</Tooltip.Content>
 		</Tooltip.Root>
 	{/each}

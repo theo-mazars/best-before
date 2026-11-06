@@ -11,9 +11,15 @@
 
 	let {
 		title,
+		parent,
 		refresh,
 		actions
-	}: { title: string; refresh?: () => Promise<unknown>; actions?: Snippet } = $props();
+	}: {
+		title: string;
+		parent?: { href: string; label: string };
+		refresh?: () => Promise<unknown>;
+		actions?: Snippet;
+	} = $props();
 
 	let loading = $state(false);
 
@@ -35,6 +41,12 @@
 	<Separator orientation="vertical" class="mr-2 data-[orientation=vertical]:h-4" />
 	<Breadcrumb.Root>
 		<Breadcrumb.List>
+			{#if parent}
+				<Breadcrumb.Item class="hidden md:block">
+					<Breadcrumb.Link href={parent.href}>{parent.label}</Breadcrumb.Link>
+				</Breadcrumb.Item>
+				<Breadcrumb.Separator class="hidden md:block" />
+			{/if}
 			<Breadcrumb.Item>
 				<Breadcrumb.Page>{title}</Breadcrumb.Page>
 			</Breadcrumb.Item>

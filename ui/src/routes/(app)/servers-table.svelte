@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { resolve } from '$app/paths';
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import XIcon from '@lucide/svelte/icons/x';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -14,9 +17,18 @@
 	import StatusBadge from '#lib/components/status-badge.svelte';
 	import TimeAgo from '#lib/components/time-ago.svelte';
 	import type { ServerSummary } from '#lib/api.js';
-	import { statuses, statusLook, statusRank, worstIssue } from '#lib/status.js';
+	import {
+		focuses,
+		statuses,
+		statusLook,
+		statusRank,
+		statusRule,
+		worstIssue,
+		type Focus
+	} from '#lib/status.js';
 
-	let { servers }: { servers: ServerSummary[] } = $props();
+	let { servers, focus = $bindable() }: { servers: ServerSummary[]; focus: Focus | null } =
+		$props();
 
 	type SortKey = 'status' | 'hostname' | 'vulns' | 'lastReport';
 	const pageSize = 20;
@@ -26,10 +38,10 @@
 	let sort = $state<{ key: SortKey; desc: boolean }>({ key: 'status', desc: false });
 	let pageIndex = $state(0);
 
-	// vulnRank orders by what needs fixing first: known exploited, then
-	// critical, high and medium.
+	// vulnRank orders by what needs fixing first: emergencies, known
+	// exploited, then critical, high and medium.
 	function vulnRank(s: ServerSummary) {
-		return [s.knownExploited, s.critical, s.high, s.medium];
+		return [s.emergencies, s.knownExploited, s.critical, s.high, s.medium];
 	}
 
 	function compare(a: ServerSummary, b: ServerSummary, key: SortKey): number {
@@ -60,7 +72,8 @@
 		const list = servers.filter(
 			(s) =>
 				(!q || s.hostname.toLowerCase().includes(q)) &&
-				(shownStatuses.length === 0 || shownStatuses.includes(s.status))
+				(shownStatuses.length === 0 || shownStatuses.includes(s.status)) &&
+				(!focus || focuses[focus].test(s))
 		);
 		const dir = sort.desc ? -1 : 1;
 		return list.sort(
@@ -69,10 +82,15 @@
 	});
 	const pageCount = $derived(Math.max(1, Math.ceil(rows.length / pageSize)));
 	const pageRows = $derived(rows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize));
-	const filtered = $derived(search !== '' || shownStatuses.length > 0);
+	const filtered = $derived(search !== '' || shownStatuses.length > 0 || focus !== null);
 
 	$effect(() => {
 		if (pageIndex >= pageCount) pageIndex = pageCount - 1;
+	});
+	// A card chosen on the overview starts from the first page.
+	$effect(() => {
+		void focus;
+		untrack(() => (pageIndex = 0));
 	});
 
 	function sortBy(key: SortKey) {
@@ -87,6 +105,7 @@
 	function reset() {
 		search = '';
 		shownStatuses = [];
+		focus = null;
 		pageIndex = 0;
 	}
 </script>
@@ -140,6 +159,18 @@
 				{/each}
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
+		{#if focus}
+			<Button
+				variant="secondary"
+				size="sm"
+				class="h-8"
+				aria-label="Stop showing only: {focuses[focus].label}"
+				onclick={() => (focus = null)}
+			>
+				{focuses[focus].label}
+				<XIcon />
+			</Button>
+		{/if}
 		{#if filtered}
 			<Button variant="ghost" size="sm" class="h-8" onclick={reset}>
 				<RotateCcwIcon />
@@ -152,14 +183,19 @@
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
-					<Table.Head>{@render sortable('status', 'Status')}</Table.Head>
+					<Table.Head>
+						<span class="flex items-center gap-1">
+							{@render sortable('status', 'Status')}
+							<Hint text={statusRule} />
+						</span>
+					</Table.Head>
 					<Table.Head>{@render sortable('hostname', 'Server')}</Table.Head>
 					<Table.Head>Issue</Table.Head>
 					<Table.Head>
 						<span class="flex items-center gap-1">
 							{@render sortable('vulns', 'Vulnerabilities')}
 							<Hint
-								text="Coloured counts have a fix, are at or above your threshold and are not accepted. Grey counts are the others: they never change the status."
+								text="Coloured counts have a fix, are at or above your threshold and are not accepted. Grey counts are the others (no fix, below threshold, accepted): they never change the status. Kernels installed but not running are left out."
 							/>
 						</span>
 					</Table.Head>
@@ -173,8 +209,7 @@
 					<Table.Row class={s.problems.length ? 'border-b-0' : undefined}>
 						<Table.Cell><StatusBadge status={s.status} /></Table.Cell>
 						<Table.Cell class="font-medium">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- server page until migrated -->
-							<a href="/servers/{s.id}" data-sveltekit-reload class="hover:underline"
+							<a href={resolve('/(app)/servers/[id]', { id: s.id })} class="hover:underline"
 								>{s.hostname}</a
 							>
 						</Table.Cell>

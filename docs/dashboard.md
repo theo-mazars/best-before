@@ -195,9 +195,28 @@ check** rather than passing for clean; it does not change the server's
 status. A runtime whose variable gives no precise version (`REDIS_VERSION=7`)
 is listed as not checked.
 
-Only vulnerabilities **with a fix available** count towards a server's status.
-Those without one are listed on the server's page under **No fix yet**, and
-move up once a fix is published.
+Each server has one status, for what there is to do now:
+
+- **Critical:** an open vulnerability worth an emergency alert, as set under
+  **What is worth sending** (by default: known exploited, or CVSS 9.0 or
+  more, with a fix available). The status and the alerts follow the same rule.
+- **Needs attention:** security updates to install, a reboot required, or a
+  gap: a report with errors, or an image that could not be checked.
+- **OK:** nothing to do now. Other vulnerabilities, such as a medium one with
+  no update offered yet, still show in the counts but do not change it.
+- **Stale**, **Waiting** and **Not checked**: no recent report, none yet, or
+  not checked against the vulnerability database yet. While the latest report
+  waits to be checked, the server's page shows the previous vulnerabilities,
+  dimmed, with a note.
+
+Vulnerabilities without a fix are listed on the server's page, greyed out and
+marked **No fix yet**; they count once a fix is published.
+
+A vulnerability counts once on the host, and once in each image, whatever the
+number of packages it is in there: openssl and libssl3, or the packages of
+one kernel, are built from the same source and fixed together. It counts as
+its most urgent package: if one of them has a fix, it has one. The server's
+page still lists it under each package, which is what gets updated.
 
 ## Alerts and digest
 
@@ -262,16 +281,17 @@ A few things to know:
 ## Accepted risks and your threshold
 
 Some vulnerabilities do not matter on your servers: the vulnerable feature is
-off, or the service is only reachable over your VPN. Click **Accept** next to
-one on a server's page, say why, and choose until when (90 days by default, a
-year at most). Until then, it:
+off, or the service is only reachable over your VPN. Expand its package on a
+server's page, click **Accept** next to it, say why, and choose until when (90
+days by default, a year at most). Until then, it:
 
 - does not count towards the server's status;
 - raises no emergency, and closes one already open;
 - is left out of the digest, until its expiry is a week away.
 
-It stays listed under **Accepted risks** on the server's page, with the
-reason, who accepted it and until when, and can be changed or withdrawn there.
+It stays listed on the server's page, greyed out and marked **Accepted until**
+its expiry, with the reason and who accepted it in its tooltip, and can be
+changed or withdrawn there.
 On expiry it counts again: if it is an emergency, it is sent at once, and the
 next digest lists it. An acceptance covers one vulnerability on one server's
 host, or on one of its images: in every package affected there, but nowhere
@@ -279,10 +299,24 @@ else. When the image is updated, it is a new image, and is checked afresh.
 
 Under **Settings › Your pages**, each user chooses the lowest severity their
 pages show (low by default). Less severe vulnerabilities are still checked and
-listed under **Below your threshold** on each server's page, but do not count
-towards its status. Vulnerabilities known to be exploited, and those of
+listed on each server's page, greyed out and marked **Below threshold**, but do
+not count towards its status. Vulnerabilities known to be exploited, and those of
 unknown severity, are always shown. This only changes what you see:
 emergencies and the digest follow **What is worth sending**.
+
+## Old kernels
+
+A kernel package installed but not running, for example
+`linux-image-6.8.0-50-generic` on a server running `6.8.0-60-generic`, cannot
+be attacked until the server boots it. Its vulnerabilities are listed greyed
+out and marked **Not running**, and a note on the server's page names the
+old kernels installed. They count towards nothing: no status, no emergency,
+no digest. After a reboot into that kernel, they count like any other.
+`apt autoremove` removes old kernels.
+
+A newer kernel, installed but waiting for a reboot, is treated the same way,
+and the note says so: until the reboot, the running kernel's vulnerabilities
+are the ones that count, and the server usually shows a reboot as required.
 
 ## Backups
 

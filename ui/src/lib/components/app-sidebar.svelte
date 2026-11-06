@@ -2,24 +2,37 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { setMode, userPrefersMode } from 'mode-watcher';
-	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { api, type Session } from '#lib/api.js';
+	import { api, type ServerSummary, type Session } from '#lib/api.js';
+	import { statusLook } from '#lib/status.js';
+	import { cn } from '#lib/utils.js';
 	import Logo from './logo.svelte';
 
-	let { session }: { session: Session } = $props();
+	let { session, servers }: { session: Session; servers: ServerSummary[] } = $props();
 
 	// Agents and settings are still server pages: they need a full load.
 	const nav = [
-		{ href: '/', label: 'Overview', icon: LayoutDashboardIcon, spa: true },
-		{ href: '/agents', label: 'Agents', icon: ServerIcon, spa: false },
-		{ href: '/settings', label: 'Settings', icon: SettingsIcon, spa: false }
+		{ href: '/agents', label: 'Agents', icon: KeyRoundIcon },
+		{ href: '/settings', label: 'Settings', icon: SettingsIcon }
 	];
+
+	// The first servers, worst first as the API sorts them, for quick access.
+	const quick = 8;
+	const dots: Record<string, string> = {
+		critical: 'bg-red-600',
+		stale: 'bg-orange-500',
+		attention: 'bg-amber-500',
+		OK: 'bg-emerald-600'
+	};
+	let open = $state(true);
 
 	async function logout() {
 		await api('POST', '/logout').catch(() => {});
@@ -42,6 +55,63 @@
 	<Sidebar.Content>
 		<Sidebar.Group>
 			<Sidebar.Menu>
+				<Collapsible.Root bind:open>
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton isActive={page.url.pathname === '/'} tooltipContent="Servers">
+							{#snippet child({ props })}
+								<a href={resolve('/(app)')} {...props}>
+									<ServerIcon />
+									<span>Servers</span>
+								</a>
+							{/snippet}
+						</Sidebar.MenuButton>
+						{#if servers.length}
+							<Collapsible.Trigger>
+								{#snippet child({ props })}
+									<Sidebar.MenuAction
+										{...props}
+										aria-label={open ? 'Hide servers' : 'Show servers'}
+									>
+										<ChevronRightIcon class={cn('transition-transform', open && 'rotate-90')} />
+									</Sidebar.MenuAction>
+								{/snippet}
+							</Collapsible.Trigger>
+							<Collapsible.Content>
+								<Sidebar.MenuSub>
+									{#each servers.slice(0, quick) as s (s.id)}
+										{@const href = resolve('/(app)/servers/[id]', { id: s.id })}
+										<Sidebar.MenuSubItem>
+											<Sidebar.MenuSubButton isActive={page.url.pathname === href}>
+												{#snippet child({ props })}
+													<a {href} {...props} title="{s.hostname} · {statusLook(s.status).label}">
+														<span
+															class={cn(
+																'size-2 shrink-0 rounded-full',
+																dots[s.status] ?? 'bg-muted-foreground/40'
+															)}
+														></span>
+														<span class="truncate">{s.hostname}</span>
+													</a>
+												{/snippet}
+											</Sidebar.MenuSubButton>
+										</Sidebar.MenuSubItem>
+									{/each}
+									{#if servers.length > quick}
+										<Sidebar.MenuSubItem>
+											<Sidebar.MenuSubButton>
+												{#snippet child({ props })}
+													<a href={resolve('/(app)')} {...props} class="text-muted-foreground">
+														<span>All {servers.length} servers</span>
+													</a>
+												{/snippet}
+											</Sidebar.MenuSubButton>
+										</Sidebar.MenuSubItem>
+									{/if}
+								</Sidebar.MenuSub>
+							</Collapsible.Content>
+						{/if}
+					</Sidebar.MenuItem>
+				</Collapsible.Root>
 				{#each nav as item (item.href)}
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
@@ -50,7 +120,7 @@
 						>
 							{#snippet child({ props })}
 								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- server pages until migrated -->
-								<a href={item.href} data-sveltekit-reload={item.spa ? undefined : true} {...props}>
+								<a href={item.href} data-sveltekit-reload {...props}>
 									<item.icon />
 									<span>{item.label}</span>
 								</a>

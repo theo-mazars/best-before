@@ -44,6 +44,7 @@ export type ServerSummary = {
 	high: number;
 	medium: number;
 	knownExploited: number;
+	emergencies: number;
 	noFixYet: number;
 	accepted: number;
 	securityUpdates: number;
@@ -58,4 +59,73 @@ export type ServerSummary = {
 export type Overview = {
 	db: { ready: boolean; built?: string; lastError?: string };
 	servers: ServerSummary[];
+};
+
+export type CveState = 'open' | 'noFix' | 'below' | 'accepted' | 'oldKernel';
+
+export type Cve = {
+	id: string;
+	url: string;
+	severity: string;
+	cvss: number;
+	knownExploited: boolean;
+	fixVersions: string[];
+	firstSeenAt: string;
+	state: CveState;
+	emergency: boolean;
+	risk: { reason: string; acceptedBy: string; acceptedAt: string; expiresAt: string } | null;
+};
+
+export type PackageRow = {
+	where: string;
+	target: string;
+	package: string;
+	version: string;
+	kind: string;
+	severities: Record<StripSeverity, SeverityCount>;
+	knownExploited: boolean;
+	maxCvss: number;
+	updateTo: string;
+	reboot: string;
+	emergency: boolean;
+	muted: boolean;
+	cves: Cve[];
+};
+
+export type ImageInfo = {
+	id: string;
+	references: string[];
+	containers: string[];
+	os: string;
+	notChecked: string;
+	checked: string[];
+	imprecise: string[];
+	nothingChecked: boolean;
+	where: string;
+	severities: Record<StripSeverity, SeverityCount>;
+};
+
+export type ServerPage = {
+	server: ServerSummary;
+	db: Overview['db'];
+	report: {
+		receivedAt: string;
+		matched: boolean;
+		matchedAt: string | null;
+		dbBuilt: string | null;
+	} | null;
+	host: {
+		os: string;
+		kernel: string;
+		uptimeSeconds: number;
+		rebootRequired: boolean;
+		rebootPackages: string[];
+		listsPublishedAt: string | null;
+		agentVersion: string;
+	} | null;
+	oldKernels: { abi: string; packages: string[]; vulnerabilities: number; newer: boolean }[];
+	upgradable: { name: string; current: string; candidate: string; security: boolean }[];
+	packages: PackageRow[];
+	images: ImageInfo[];
+	risk: { min: string; max: string; default: string };
 };

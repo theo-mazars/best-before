@@ -12,6 +12,7 @@ const base: ServerSummary = {
 	high: 0,
 	medium: 0,
 	knownExploited: 0,
+	emergencies: 0,
 	noFixYet: 0,
 	accepted: 0,
 	securityUpdates: 0,
@@ -38,8 +39,9 @@ describe('status', () => {
 	it('sums up the worst issue', () => {
 		expect(worstIssue(base)).toBe('—');
 		expect(worstIssue({ ...base, status: 'stale', critical: 3 })).toBe('Stopped reporting');
-		expect(worstIssue({ ...base, critical: 2, knownExploited: 1 })).toBe('1 known exploited');
-		expect(worstIssue({ ...base, high: 1, securityUpdates: 4 })).toBe('1 high');
+		expect(worstIssue({ ...base, emergencies: 2, securityUpdates: 4 })).toBe('2 to fix now');
+		expect(worstIssue({ ...base, high: 1, securityUpdates: 4 })).toBe('4 security updates');
+		expect(worstIssue({ ...base, high: 3 })).toBe('—');
 		expect(worstIssue({ ...base, securityUpdates: 1 })).toBe('1 security update');
 		expect(worstIssue({ ...base, rebootRequired: true, medium: 2 })).toBe('Reboot required');
 		expect(worstIssue({ ...base, notChecked: 2 })).toBe('2 images not checked');

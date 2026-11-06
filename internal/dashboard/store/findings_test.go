@@ -85,3 +85,40 @@ func TestReplaceFindings(t *testing.T) {
 		t.Errorf("sequences %v, err %v", seqs, err)
 	}
 }
+
+// At startup, only reports not matched yet, or matched against an older
+// database, are matched again.
+func TestUnmatchedReports(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	built := now.Add(-time.Hour)
+	s.CreateEnrolmentCode(ctx, [32]byte{1}, "", now, now.Add(time.Hour))
+	a, _ := s.RedeemEnrolmentCode(ctx, [32]byte{1}, NewAgent{PublicKey: newKey(t), Hostname: "web-01"}, now)
+	ids := func(b time.Time) []string {
+		t.Helper()
+		got, err := s.UnmatchedReports(ctx, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := ids(built); len(got) != 0 {
+		t.Errorf("no report yet: %v", got)
+	}
+	s.RecordReport(ctx, a.ID, 1, requestID(1), now, "v0.1.0", []byte(`{}`))
+	if got := ids(built); len(got) != 1 || got[0] != a.ID {
+		t.Errorf("not matched: %v", got)
+	}
+	s.ReplaceFindings(ctx, a.ID, 1, built, nil, nil, now)
+	if got := ids(built); len(got) != 0 {
+		t.Errorf("matched against this database: %v", got)
+	}
+	if got := ids(built.Add(time.Hour)); len(got) != 1 {
+		t.Errorf("matched against an older database: %v", got)
+	}
+	s.RecordReport(ctx, a.ID, 2, requestID(2), now, "v0.1.0", []byte(`{}`))
+	if got := ids(built); len(got) != 1 {
+		t.Errorf("a newer report: %v", got)
+	}
+}

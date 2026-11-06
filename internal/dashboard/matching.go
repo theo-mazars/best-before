@@ -73,9 +73,26 @@ func (m *matching) enqueueAll(ctx context.Context) {
 	}
 }
 
+// enqueueUnmatched asks for the reports that need it to be matched: those
+// received but not matched before the last stop, or matched against an
+// older database. Nothing else changed while the dashboard was down.
+func (m *matching) enqueueUnmatched(ctx context.Context) {
+	ids, err := m.store.UnmatchedReports(ctx, m.db.Status().Built)
+	if err != nil {
+		m.log.Error("listing reports to match", "error", err)
+		return
+	}
+	if len(ids) > 0 {
+		m.log.Info("matching the reports not matched yet", "servers", len(ids))
+	}
+	for _, id := range ids {
+		m.enqueue(id)
+	}
+}
+
 // run matches queued reports until ctx ends.
 func (m *matching) run(ctx context.Context) {
-	m.enqueueAll(ctx)
+	m.enqueueUnmatched(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -110,6 +127,7 @@ func (m *matching) match(ctx context.Context, agentID string) {
 		return
 	}
 	status := m.db.Status()
+	start := time.Now()
 	res, err := m.db.Match(ctx, &r)
 	if errors.Is(err, vulns.ErrNotReady) {
 		return // matched once the database is ready
@@ -118,6 +136,7 @@ func (m *matching) match(ctx context.Context, agentID string) {
 		m.log.Error("matching report", "agent", agentID, "error", err)
 		return
 	}
+	matched := time.Now()
 	findings := make([]store.Finding, 0, len(res.Findings))
 	for _, f := range res.Findings {
 		findings = append(findings, store.Finding{
@@ -130,6 +149,8 @@ func (m *matching) match(ctx context.Context, agentID string) {
 		m.log.Error("storing findings", "agent", agentID, "error", err)
 		return
 	}
+	m.log.Info("report matched", "server", r.Host.Hostname, "findings", len(findings),
+		"matching", matched.Sub(start).Round(time.Millisecond), "storing", time.Since(matched).Round(time.Millisecond))
 	if m.matched != nil {
 		m.matched()
 	}
