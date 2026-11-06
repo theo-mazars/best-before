@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -179,97 +180,164 @@ func TestPagesNeedAdminSession(t *testing.T) {
 	tw := newTestWeb(t, "")
 	tw.addUser("user@example.org", store.RoleUser)
 
-	if rec := tw.do(http.MethodGet, "/agents", nil, nil); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
+	if rec := tw.do(http.MethodGet, "/settings", nil, nil); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
 		t.Errorf("no session: HTTP %d", rec.Code)
 	}
 	forged := &http.Cookie{Name: sessionCookie, Value: "made-up"}
-	if rec := tw.do(http.MethodGet, "/agents", nil, forged); rec.Code != http.StatusSeeOther {
+	if rec := tw.do(http.MethodGet, "/settings", nil, forged); rec.Code != http.StatusSeeOther {
 		t.Errorf("forged session: HTTP %d", rec.Code)
 	}
-	if rec := tw.do(http.MethodGet, "/agents", nil, tw.session("user@example.org")); rec.Code != http.StatusForbidden {
+	if rec := tw.do(http.MethodGet, "/settings", nil, tw.session("user@example.org")); rec.Code != http.StatusForbidden {
 		t.Errorf("user role: HTTP %d", rec.Code)
 	}
 
-	if rec := tw.do(http.MethodGet, "/api/ui/overview", nil, nil); rec.Code != http.StatusUnauthorized {
-		t.Errorf("overview without session: HTTP %d", rec.Code)
-	}
-	if rec := tw.do(http.MethodGet, "/api/ui/overview", nil, tw.session("user@example.org")); rec.Code != http.StatusForbidden {
-		t.Errorf("overview for user role: HTTP %d", rec.Code)
+	for _, path := range []string{"/api/ui/overview", "/api/ui/agents"} {
+		if rec := tw.do(http.MethodGet, path, nil, nil); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s without session: HTTP %d", path, rec.Code)
+		}
+		if rec := tw.do(http.MethodGet, path, nil, forged); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s with forged session: HTTP %d", path, rec.Code)
+		}
+		if rec := tw.do(http.MethodGet, path, nil, tw.session("user@example.org")); rec.Code != http.StatusForbidden {
+			t.Errorf("%s for user role: HTTP %d", path, rec.Code)
+		}
 	}
 
 	admin := tw.session("admin@example.org")
-	rec := tw.do(http.MethodGet, "/agents", nil, admin)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "The fridge is empty") {
-		t.Errorf("admin: HTTP %d", rec.Code)
+	rec := tw.do(http.MethodGet, "/api/ui/agents", nil, admin)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"agents":[]`) {
+		t.Errorf("admin: HTTP %d %s", rec.Code, rec.Body)
 	}
-	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
+	if csp := tw.do(http.MethodGet, "/settings", nil, admin).Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
 		t.Errorf("CSP: %q", csp)
 	}
 
 	tw.do(http.MethodPost, "/logout", url.Values{}, admin)
-	if rec := tw.do(http.MethodGet, "/agents", nil, admin); rec.Code != http.StatusSeeOther {
+	if rec := tw.do(http.MethodGet, "/api/ui/agents", nil, admin); rec.Code != http.StatusUnauthorized {
 		t.Errorf("session still valid after logout: HTTP %d", rec.Code)
 	}
 }
 
 func TestEnrolmentCodePage(t *testing.T) {
 	tw := newTestWeb(t, "")
-	if rec := tw.do(http.MethodPost, "/agents/codes", url.Values{}, tw.session("admin@example.org")); rec.Code != http.StatusConflict {
-		t.Errorf("without public_url: HTTP %d", rec.Code)
+	if rec := tw.json(http.MethodPost, "/api/ui/agents/codes", nil, tw.session("admin@example.org")); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "public_url") {
+		t.Errorf("without public_url: HTTP %d %s", rec.Code, rec.Body)
 	}
 
 	tw = newTestWeb(t, "https://dashboard.test:8443")
-	rec := tw.do(http.MethodPost, "/agents/codes", url.Values{}, tw.session("admin@example.org"))
-	i := strings.Index(rec.Body.String(), "bb1_")
-	if rec.Code != http.StatusOK || i < 0 {
-		t.Fatalf("code page: HTTP %d", rec.Code)
+	rec := tw.json(http.MethodPost, "/api/ui/agents/codes", nil, tw.session("admin@example.org"))
+	var v struct {
+		Command   string
+		ExpiresAt time.Time
 	}
-	raw := rec.Body.String()[i:]
-	code, err := protocol.ParseEnrolmentCode(raw[:strings.IndexAny(raw, "<\n ")])
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &v) != nil {
+		t.Fatalf("code: HTTP %d %s", rec.Code, rec.Body)
+	}
+	raw, ok := strings.CutPrefix(v.Command, "sudo bestbefore-agent enrol ")
+	if !ok || !v.ExpiresAt.Equal(tw.now.Add(codeLifetime)) {
+		t.Fatalf("code: %+v", v)
+	}
+	code, err := protocol.ParseEnrolmentCode(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if code.URL != "https://dashboard.test:8443" || code.Fingerprint != tw.w.key.Public().Fingerprint() {
 		t.Errorf("code: %+v", code)
 	}
+	admin := tw.session("admin@example.org")
+	var list agentsView
+	json.Unmarshal(tw.do(http.MethodGet, "/api/ui/agents", nil, admin).Body.Bytes(), &list)
+	if len(list.Codes) != 1 || list.Codes[0].CreatedBy != "admin@example.org" || !list.CanEnrol {
+		t.Fatalf("active codes: %+v", list)
+	}
+
 	key, _ := protocol.GenerateAgentKey()
 	if _, err := tw.store.RedeemEnrolmentCode(context.Background(), code.SecretHash(),
 		store.NewAgent{PublicKey: key.Public(), Hostname: "web-01"}, tw.now); err != nil {
 		t.Errorf("code from the page does not redeem: %v", err)
 	}
+	json.Unmarshal(tw.do(http.MethodGet, "/api/ui/agents", nil, admin).Body.Bytes(), &list)
+	if len(list.Codes) != 0 {
+		t.Errorf("used code still active: %+v", list.Codes)
+	}
+}
+
+func TestRevokeEnrolmentCode(t *testing.T) {
+	tw := newTestWeb(t, "https://dashboard.test")
+	admin := tw.session("admin@example.org")
+	rec := tw.json(http.MethodPost, "/api/ui/agents/codes", nil, admin)
+	var v struct{ Command string }
+	json.Unmarshal(rec.Body.Bytes(), &v)
+	code, err := protocol.ParseEnrolmentCode(strings.TrimPrefix(v.Command, "sudo bestbefore-agent enrol "))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list agentsView
+	json.Unmarshal(tw.do(http.MethodGet, "/api/ui/agents", nil, admin).Body.Bytes(), &list)
+	if len(list.Codes) != 1 {
+		t.Fatalf("codes: %+v", list.Codes)
+	}
+
+	path := "/api/ui/agents/codes/" + list.Codes[0].ID
+	if rec := tw.json(http.MethodDelete, path, nil, admin); rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke code: HTTP %d", rec.Code)
+	}
+	if rec := tw.json(http.MethodDelete, path, nil, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("revoke code twice: HTTP %d", rec.Code)
+	}
+	key, _ := protocol.GenerateAgentKey()
+	if _, err := tw.store.RedeemEnrolmentCode(context.Background(), code.SecretHash(),
+		store.NewAgent{PublicKey: key.Public(), Hostname: "web-01"}, tw.now); !errors.Is(err, store.ErrCodeInvalid) {
+		t.Errorf("revoked code redeems: %v", err)
+	}
 }
 
 func TestCrossSiteRequestsRefused(t *testing.T) {
 	tw := newTestWeb(t, "https://dashboard.test")
-	rec := tw.do(http.MethodPost, "/agents/codes", url.Values{}, tw.session("admin@example.org"), "Sec-Fetch-Site", "cross-site")
+	rec := tw.do(http.MethodPost, "/api/ui/agents/codes", nil, tw.session("admin@example.org"), "Sec-Fetch-Site", "cross-site", "Content-Type", "application/json")
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("cross-site POST: HTTP %d", rec.Code)
 	}
 }
 
-func TestAgentsPageEscapesAndRevokes(t *testing.T) {
+func TestAgentsAndRevoke(t *testing.T) {
 	tw := newTestWeb(t, "")
 	ctx := context.Background()
 	tw.store.CreateEnrolmentCode(ctx, [32]byte{1}, "", tw.now, tw.now.Add(time.Hour))
 	key, _ := protocol.GenerateAgentKey()
 	a, err := tw.store.RedeemEnrolmentCode(ctx, [32]byte{1},
-		store.NewAgent{PublicKey: key.Public(), Hostname: `<script>alert("pwned")</script>`, AgentVersion: "v1", EnrolledFromIP: "10.0.0.5"}, tw.now)
+		store.NewAgent{PublicKey: key.Public(), Hostname: "web-01", AgentVersion: "v1", EnrolledFromIP: "10.0.0.5"}, tw.now)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	admin := tw.session("admin@example.org")
-	body := tw.do(http.MethodGet, "/agents", nil, admin).Body.String()
-	if strings.Contains(body, "<script>") || !strings.Contains(body, "&lt;script&gt;") {
-		t.Error("hostname not escaped")
+	var v agentsView
+	rec := tw.do(http.MethodGet, "/api/ui/agents", nil, admin)
+	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil || len(v.Agents) != 1 {
+		t.Fatalf("agents: HTTP %d %s", rec.Code, rec.Body)
+	}
+	got := v.Agents[0]
+	if got.ID != a.ID || got.Hostname != "web-01" || got.Status != "waiting" || got.EnrolledFrom != "10.0.0.5" ||
+		got.Fingerprint != shortFingerprint(key.Public()) || got.RevokedAt != nil || v.CanEnrol {
+		t.Errorf("agent: %+v, canEnrol %v", got, v.CanEnrol)
 	}
 
-	if rec := tw.do(http.MethodPost, "/agents/"+a.ID+"/revoke", url.Values{}, admin); rec.Code != http.StatusSeeOther {
+	if rec := tw.json(http.MethodPost, "/api/ui/agents/"+a.ID+"/revoke", nil, admin); rec.Code != http.StatusNoContent {
 		t.Fatalf("revoke: HTTP %d", rec.Code)
 	}
-	got, _ := tw.store.AgentByID(ctx, a.ID)
-	if !got.Revoked() {
+	if a, _ := tw.store.AgentByID(ctx, a.ID); !a.Revoked() {
 		t.Error("agent not revoked")
+	}
+	if rec := tw.json(http.MethodPost, "/api/ui/agents/"+a.ID+"/revoke", nil, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("revoke twice: HTTP %d", rec.Code)
+	}
+	if rec := tw.json(http.MethodPost, "/api/ui/agents/nope/revoke", nil, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("revoke unknown: HTTP %d", rec.Code)
+	}
+	json.Unmarshal(tw.do(http.MethodGet, "/api/ui/agents", nil, admin).Body.Bytes(), &v)
+	if v.Agents[0].Status != "revoked" || v.Agents[0].RevokedAt == nil {
+		t.Errorf("after revoke: %+v", v.Agents[0])
 	}
 }
 

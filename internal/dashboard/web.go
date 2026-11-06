@@ -69,7 +69,7 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		return nil, err
 	}
 	funcs := template.FuncMap{"date": formatDate}
-	for _, page := range []string{"agents", "code", "error", "settings", "channel"} {
+	for _, page := range []string{"error", "settings", "channel"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -96,13 +96,14 @@ func (w *web) routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/ui/servers/{id}", page(w.apiAdmin(w.serverPage)))
 	mux.Handle("PUT /api/ui/servers/{id}/risk", page(w.apiAdmin(w.acceptRisk)))
 	mux.Handle("DELETE /api/ui/servers/{id}/risk", page(w.apiAdmin(w.withdrawRisk)))
+	mux.Handle("GET /api/ui/agents", page(w.apiAdmin(w.agents)))
+	mux.Handle("POST /api/ui/agents/codes", page(w.apiAdmin(w.createCode)))
+	mux.Handle("DELETE /api/ui/agents/codes/{id}", page(w.apiAdmin(w.revokeCode)))
+	mux.Handle("POST /api/ui/agents/{id}/revoke", page(w.apiAdmin(w.revoke)))
 	for _, m := range []string{"GET", "POST", "PUT", "DELETE"} {
 		mux.Handle(m+" /api/ui/", page(http.HandlerFunc(w.apiNotFound)))
 	}
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
-	mux.Handle("GET /agents", page(w.admin(w.agentsPage)))
-	mux.Handle("POST /agents/codes", page(w.admin(w.createCode)))
-	mux.Handle("POST /agents/{id}/revoke", page(w.admin(w.revoke)))
 	mux.Handle("GET /settings", page(w.admin(w.settingsPage)))
 	mux.Handle("POST /settings/alerts", page(w.admin(w.saveAlertSettings)))
 	mux.Handle("POST /settings/digest", page(w.admin(w.sendDigest)))
@@ -170,45 +171,61 @@ func (w *web) clearSession(rw http.ResponseWriter, r *http.Request) {
 }
 
 type agentRow struct {
-	ID           string
-	Hostname     string
-	Status       string
-	StatusLabel  string
-	Fingerprint  string
-	AgentVersion string
-	EnrolledAt   time.Time
-	EnrolledFrom string
-	LastReportAt *time.Time
-	Revoked      bool
+	ID           string     `json:"id"`
+	Hostname     string     `json:"hostname"`
+	Status       string     `json:"status"`
+	Fingerprint  string     `json:"fingerprint"`
+	AgentVersion string     `json:"agentVersion"`
+	EnrolledAt   time.Time  `json:"enrolledAt"`
+	EnrolledFrom string     `json:"enrolledFrom"`
+	LastReportAt *time.Time `json:"lastReportAt"`
+	RevokedAt    *time.Time `json:"revokedAt"`
 }
 
-func (w *web) agentsPage(rw http.ResponseWriter, r *http.Request, u *store.User) {
-	w.renderAgents(rw, r, u, http.StatusOK, "")
+type codeRow struct {
+	ID        string    `json:"id"`
+	CreatedBy string    `json:"createdBy"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-func (w *web) renderAgents(rw http.ResponseWriter, r *http.Request, u *store.User, status int, message string) {
+type agentsView struct {
+	Agents   []agentRow `json:"agents"`
+	Codes    []codeRow  `json:"codes"`
+	CanEnrol bool       `json:"canEnrol"`
+}
+
+func (w *web) agents(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	agents, err := w.store.Agents(r.Context())
 	if err != nil {
-		w.fail(rw, r, err)
+		w.apiFail(rw, r, err)
 		return
 	}
 	now := w.now()
+	active, err := w.store.ActiveEnrolmentCodes(r.Context(), now)
+	if err != nil {
+		w.apiFail(rw, r, err)
+		return
+	}
+	codes := make([]codeRow, 0, len(active))
+	for _, c := range active {
+		codes = append(codes, codeRow(c))
+	}
 	rows := make([]agentRow, 0, len(agents))
 	for _, a := range agents {
 		rows = append(rows, agentRow{
 			ID:           a.ID,
 			Hostname:     a.Hostname,
 			Status:       agentStatus(&a, now, w.cfg.StaleAfter),
-			StatusLabel:  statusLabels[agentStatus(&a, now, w.cfg.StaleAfter)],
 			Fingerprint:  shortFingerprint(a.PublicKey),
 			AgentVersion: a.AgentVersion,
 			EnrolledAt:   a.EnrolledAt,
 			EnrolledFrom: a.EnrolledFromIP,
 			LastReportAt: a.LastReportAt,
-			Revoked:      a.Revoked(),
+			RevokedAt:    a.RevokedAt,
 		})
 	}
-	w.render(rw, status, "agents", map[string]any{"User": u, "Agents": rows, "Error": message})
+	writeJSON(rw, http.StatusOK, agentsView{Agents: rows, Codes: codes, CanEnrol: w.cfg.PublicURL != ""})
 }
 
 // agentStatus treats an agent that never reported like a stale one: silence
@@ -227,42 +244,59 @@ func agentStatus(a *store.Agent, now time.Time, staleAfter time.Duration) string
 	return "reporting"
 }
 
-var statusLabels = map[string]string{
-	"revoked":   "revoked",
-	"stale":     "stale",
-	"waiting":   "waiting for first report",
-	"reporting": "reporting",
+type enrolmentCodeView struct {
+	Command   string    `json:"command"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 func (w *web) createCode(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	if w.cfg.PublicURL == "" {
-		w.renderAgents(rw, r, u, http.StatusConflict, "Set public_url in the dashboard configuration before creating enrolment codes: agents need to know where to reach the dashboard.")
+		writeError(rw, http.StatusConflict, "", "Set public_url in the dashboard configuration before creating enrolment codes: agents need to know where to reach the dashboard.")
 		return
 	}
 	code, err := protocol.NewEnrolmentCode(w.cfg.PublicURL, w.key.Public())
 	if err != nil {
-		w.fail(rw, r, err)
+		w.apiFail(rw, r, err)
 		return
 	}
 	now := w.now()
 	expires := now.Add(codeLifetime)
 	if err := w.store.CreateEnrolmentCode(r.Context(), code.SecretHash(), u.ID, now, expires); err != nil {
-		w.fail(rw, r, err)
+		w.apiFail(rw, r, err)
 		return
 	}
 	w.log.Info("enrolment code created", "by", u.Email, "expires", expires)
-	w.render(rw, http.StatusOK, "code", map[string]any{"User": u, "Code": code.String(), "ExpiresAt": expires})
+	writeJSON(rw, http.StatusOK, enrolmentCodeView{Command: "sudo bestbefore-agent enrol " + code.String(), ExpiresAt: expires})
+}
+
+func (w *web) revokeCode(rw http.ResponseWriter, r *http.Request, u *store.User) {
+	id := r.PathValue("id")
+	err := w.store.RevokeEnrolmentCode(r.Context(), id, w.now())
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(rw, http.StatusNotFound, "", "This code was already used, revoked or expired.")
+		return
+	}
+	if err != nil {
+		w.apiFail(rw, r, err)
+		return
+	}
+	w.log.Info("enrolment code revoked", "code", id, "by", u.Email)
+	rw.WriteHeader(http.StatusNoContent)
 }
 
 func (w *web) revoke(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	id := r.PathValue("id")
 	err := w.store.RevokeAgent(r.Context(), id, u.ID, w.now())
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		w.fail(rw, r, err)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(rw, http.StatusNotFound, "", "This agent does not exist or is already revoked.")
+		return
+	}
+	if err != nil {
+		w.apiFail(rw, r, err)
 		return
 	}
 	w.log.Info("agent revoked", "agent", id, "by", u.Email)
-	http.Redirect(rw, r, "/agents", http.StatusSeeOther)
+	rw.WriteHeader(http.StatusNoContent)
 }
 
 // render builds the whole page before sending it, so that a template error

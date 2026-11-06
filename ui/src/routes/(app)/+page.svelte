@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import RefrigeratorIcon from '@lucide/svelte/icons/refrigerator';
+	import ServerIcon from '@lucide/svelte/icons/server';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -65,11 +66,11 @@
 	{#if servers.length === 0}
 		<Empty.Root class="border">
 			<Empty.Header>
-				<Empty.Media variant="icon"><RefrigeratorIcon /></Empty.Media>
-				<Empty.Title>The fridge is empty</Empty.Title>
+				<Empty.Media variant="icon"><ServerIcon /></Empty.Media>
+				<Empty.Title>No server enrolled yet</Empty.Title>
 			</Empty.Header>
 			<Empty.Content>
-				<Button href="/agents" data-sveltekit-reload>Add a server</Button>
+				<Button href={resolve('/(app)/agents')}>Add an agent</Button>
 			</Empty.Content>
 		</Empty.Root>
 	{:else}

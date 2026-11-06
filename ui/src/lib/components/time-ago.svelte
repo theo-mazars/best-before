@@ -3,13 +3,15 @@
 	import { clock } from '#lib/clock.svelte.js';
 	import { formatUTC, timeAgo } from '#lib/date.js';
 
-	let { time }: { time: string | null | undefined } = $props();
+	let { time, detail }: { time: string | null | undefined; detail?: string } = $props();
 </script>
 
 {#if time}
 	<Tooltip.Root>
 		<Tooltip.Trigger class="cursor-default">{timeAgo(time, clock.now)}</Tooltip.Trigger>
-		<Tooltip.Content class="tabular-nums">{formatUTC(time)}</Tooltip.Content>
+		<Tooltip.Content class="tabular-nums"
+			>{formatUTC(time)}{#if detail}&nbsp;· {detail}{/if}</Tooltip.Content
+		>
 	</Tooltip.Root>
 {:else}
 	—
