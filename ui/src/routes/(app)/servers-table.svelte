@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
@@ -6,6 +7,7 @@
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import XIcon from '@lucide/svelte/icons/x';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -15,9 +17,18 @@
 	import StatusBadge from '#lib/components/status-badge.svelte';
 	import TimeAgo from '#lib/components/time-ago.svelte';
 	import type { ServerSummary } from '#lib/api.js';
-	import { statuses, statusLook, statusRank, statusRule, worstIssue } from '#lib/status.js';
+	import {
+		focuses,
+		statuses,
+		statusLook,
+		statusRank,
+		statusRule,
+		worstIssue,
+		type Focus
+	} from '#lib/status.js';
 
-	let { servers }: { servers: ServerSummary[] } = $props();
+	let { servers, focus = $bindable() }: { servers: ServerSummary[]; focus: Focus | null } =
+		$props();
 
 	type SortKey = 'status' | 'hostname' | 'vulns' | 'lastReport';
 	const pageSize = 20;
@@ -61,7 +72,8 @@
 		const list = servers.filter(
 			(s) =>
 				(!q || s.hostname.toLowerCase().includes(q)) &&
-				(shownStatuses.length === 0 || shownStatuses.includes(s.status))
+				(shownStatuses.length === 0 || shownStatuses.includes(s.status)) &&
+				(!focus || focuses[focus].test(s))
 		);
 		const dir = sort.desc ? -1 : 1;
 		return list.sort(
@@ -70,10 +82,15 @@
 	});
 	const pageCount = $derived(Math.max(1, Math.ceil(rows.length / pageSize)));
 	const pageRows = $derived(rows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize));
-	const filtered = $derived(search !== '' || shownStatuses.length > 0);
+	const filtered = $derived(search !== '' || shownStatuses.length > 0 || focus !== null);
 
 	$effect(() => {
 		if (pageIndex >= pageCount) pageIndex = pageCount - 1;
+	});
+	// A card chosen on the overview starts from the first page.
+	$effect(() => {
+		void focus;
+		untrack(() => (pageIndex = 0));
 	});
 
 	function sortBy(key: SortKey) {
@@ -88,6 +105,7 @@
 	function reset() {
 		search = '';
 		shownStatuses = [];
+		focus = null;
 		pageIndex = 0;
 	}
 </script>
@@ -141,6 +159,18 @@
 				{/each}
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
+		{#if focus}
+			<Button
+				variant="secondary"
+				size="sm"
+				class="h-8"
+				aria-label="Stop showing only: {focuses[focus].label}"
+				onclick={() => (focus = null)}
+			>
+				{focuses[focus].label}
+				<XIcon />
+			</Button>
+		{/if}
 		{#if filtered}
 			<Button variant="ghost" size="sm" class="h-8" onclick={reset}>
 				<RotateCcwIcon />

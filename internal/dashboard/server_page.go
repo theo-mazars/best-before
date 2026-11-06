@@ -77,6 +77,11 @@ type packageView struct {
 	// UpdateTo is the highest fixed version, which fixes every vulnerability
 	// with a fix; empty when none has one, or the versions don't compare.
 	UpdateTo string `json:"updateTo"`
+	// Reboot is the newer kernel, already installed, that a running
+	// kernel's package waits for: rebooting, not updating, fixes it.
+	Reboot string `json:"reboot"`
+	// Emergency is true when one of its vulnerabilities is to fix now.
+	Emergency bool `json:"emergency"`
 	// Muted is true when no vulnerability counts towards the status.
 	Muted bool       `json:"muted"`
 	CVEs  []*cveView `json:"cves"`
@@ -98,6 +103,8 @@ type cveView struct {
 	FirstSeenAt    time.Time `json:"firstSeenAt"`
 	State          string    `json:"state"`
 	Risk           *riskView `json:"risk"`
+	// Emergency is true for a vulnerability to fix now, as alerts see it.
+	Emergency bool `json:"emergency"`
 }
 
 type riskView struct {
@@ -289,6 +296,8 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 		if risk := st.risks.active(&f, now); risk != nil && pl == placeAccepted {
 			c.Risk = &riskView{Reason: risk.Reason, AcceptedBy: risk.AcceptedBy, AcceptedAt: risk.AcceptedAt, ExpiresAt: risk.ExpiresAt}
 		}
+		c.Emergency = !f.OldKernel && pl != placeAccepted && isEmergency(&f, settings)
+		p.Emergency = p.Emergency || c.Emergency
 		p.CVEs = append(p.CVEs, c)
 		if sev := stripSeverity(f.Severity); pl == placeOpen {
 			p.Severities[sev].Open++
@@ -330,8 +339,13 @@ func (w *web) serverPage(rw http.ResponseWriter, r *http.Request, u *store.User)
 		v.OldKernels = append(v.OldKernels, *k)
 	}
 	sort.Slice(v.OldKernels, func(i, j int) bool { return v.OldKernels[i].ABI < v.OldKernels[j].ABI })
+	running := kernelABI(h.Kernel)
+	waiting := newestKernel(body.Host.APT.Installed, running)
 	for _, p := range v.Packages {
 		p.UpdateTo = highestFix(p)
+		if waiting != "" && p.Target == vulns.TargetHost && strings.HasPrefix(p.Package, "linux-") && kernelABI(p.Package) == running {
+			p.Reboot = waiting
+		}
 	}
 	sort.SliceStable(v.Packages, func(i, j int) bool {
 		a, b := urgency(v.Packages[i]), urgency(v.Packages[j])
@@ -371,9 +385,10 @@ func highestFix(p *packageView) string {
 	return best.Raw
 }
 
-// urgency orders packages: muted ones last, then known exploited first,
-// then by count of open critical, high, medium and low vulnerabilities.
-func urgency(p *packageView) [6]int {
+// urgency orders packages: muted ones last, then those to fix now, known
+// exploited ones, then by count of open critical, high, medium and low
+// vulnerabilities.
+func urgency(p *packageView) [7]int {
 	s := p.Severities
 	kev := 1
 	if p.openKEV {
@@ -383,7 +398,11 @@ func urgency(p *packageView) [6]int {
 	if p.Muted {
 		muted = 1
 	}
-	return [6]int{muted, kev, -s["critical"].Open, -s["high"].Open, -s["medium"].Open, -s["low"].Open}
+	now := 1
+	if p.Emergency {
+		now = 0
+	}
+	return [7]int{muted, now, kev, -s["critical"].Open, -s["high"].Open, -s["medium"].Open, -s["low"].Open}
 }
 
 func imageUrgency(iv *imageView) [4]int {

@@ -11,6 +11,7 @@ import (
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
 	"github.com/theo-mazars/best-before/internal/dashboard/vulns"
 	"github.com/theo-mazars/best-before/internal/protocol"
+	"github.com/theo-mazars/best-before/internal/report"
 )
 
 func TestOldKernelRule(t *testing.T) {
@@ -176,5 +177,36 @@ func TestCountedPerVulnerability(t *testing.T) {
 	d, err := at.al.buildDigest(at.ctx, settings, at.now.Add(-7*24*time.Hour), at.now)
 	if err != nil || len(d.Emergencies) != 1 || len(d.Emergencies[0].Findings) != 1 {
 		t.Errorf("digest: %+v, %v", d, err)
+	}
+}
+
+// The running kernel's packages say to reboot when a newer kernel is
+// installed, and a vulnerability to fix now is flagged as such.
+func TestRebootAndFixNowOnServerPage(t *testing.T) {
+	tw := newTestWeb(t, "")
+	ctx := context.Background()
+	tw.store.CreateEnrolmentCode(ctx, [32]byte{1}, "", tw.now, tw.now.Add(time.Hour))
+	key, _ := protocol.GenerateAgentKey()
+	a, _ := tw.store.RedeemEnrolmentCode(ctx, [32]byte{1}, store.NewAgent{PublicKey: key.Public(), Hostname: "web-01"}, tw.now)
+	r := testServerReport()
+	r.Host.Kernel = "6.8.0-60-generic"
+	r.Host.APT.Installed = []report.InstalledPackage{{Name: "linux-image-6.8.0-60-generic"}, {Name: "linux-image-6.8.0-70-generic"}}
+	body, _ := json.Marshal(r)
+	tw.store.RecordReport(ctx, a.ID, 1, make([]byte, 32), tw.now, "v0.1.0", body)
+	db := fakeDB{findings: []vulns.Finding{
+		{Target: vulns.TargetHost, Package: "linux-modules-6.8.0-60-generic", Version: "6.8.0-60.63", Kind: vulns.KindPackage,
+			Vulnerability: "CVE-2026-1", Severity: "critical", CVSS: 9.8, FixVersions: []string{"6.8.0-70.71"}},
+		{Target: vulns.TargetHost, Package: "curl", Version: "8.5.0", Kind: vulns.KindPackage,
+			Vulnerability: "CVE-2026-2", Severity: "high", CVSS: 7.5, FixVersions: []string{"8.5.1"}},
+	}}
+	newMatching(db, tw.store, slog.New(slog.NewTextHandler(io.Discard, nil)), func() time.Time { return tw.now }).match(ctx, a.ID)
+
+	v := tw.server(tw.session("admin@example.org"), a.ID)
+	if len(v.Packages) != 2 || v.Packages[0].Package != "linux-modules-6.8.0-60-generic" ||
+		v.Packages[0].Reboot != "6.8.0-70" || !v.Packages[0].Emergency || !v.Packages[0].CVEs[0].Emergency {
+		t.Errorf("kernel: %+v", v.Packages[0])
+	}
+	if p := v.Packages[1]; p.Reboot != "" || p.Emergency || p.CVEs[0].Emergency {
+		t.Errorf("curl: %+v", p)
 	}
 }

@@ -72,6 +72,7 @@ export type Cve = {
 	fixVersions: string[];
 	firstSeenAt: string;
 	state: CveState;
+	emergency: boolean;
 	risk: { reason: string; acceptedBy: string; acceptedAt: string; expiresAt: string } | null;
 };
 
@@ -85,6 +86,8 @@ export type PackageRow = {
 	knownExploited: boolean;
 	maxCvss: number;
 	updateTo: string;
+	reboot: string;
+	emergency: boolean;
 	muted: boolean;
 	cves: Cve[];
 };

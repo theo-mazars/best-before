@@ -25,6 +25,7 @@ export type PackageFilter = {
 	search: string;
 	where: string;
 	severities: StripSeverity[];
+	fixNow: boolean;
 	knownExploited: boolean;
 	showMuted: boolean;
 };
@@ -33,6 +34,7 @@ export const noFilter: PackageFilter = {
 	search: '',
 	where: '',
 	severities: [],
+	fixNow: false,
 	knownExploited: false,
 	showMuted: false
 };
@@ -44,6 +46,7 @@ export function filterPackages(rows: PackageRow[], f: PackageFilter): PackageRow
 			(f.showMuted || !p.muted) &&
 			(!q || p.package.toLowerCase().includes(q)) &&
 			(!f.where || p.where === f.where) &&
+			(!f.fixNow || p.emergency) &&
 			(!f.knownExploited || p.knownExploited) &&
 			(f.severities.length === 0 ||
 				f.severities.some((s) => p.severities[s].open + p.severities[s].muted > 0))

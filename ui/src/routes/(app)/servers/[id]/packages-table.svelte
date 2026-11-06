@@ -25,6 +25,7 @@
 	} from '#lib/packages.js';
 	import { cn } from '#lib/utils.js';
 	import ExploitedBadge from './exploited-badge.svelte';
+	import FixNowBadge from './fix-now-badge.svelte';
 	import WhereLabel from './where-label.svelte';
 
 	let {
@@ -69,6 +70,7 @@
 		filter.search !== '' ||
 			filter.where !== '' ||
 			filter.severities.length > 0 ||
+			filter.fixNow ||
 			filter.knownExploited ||
 			filter.showMuted
 	);
@@ -161,6 +163,15 @@
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 		<Button
+			variant={filter.fixNow ? 'secondary' : 'outline'}
+			size="sm"
+			class="h-8"
+			aria-pressed={filter.fixNow}
+			onclick={() => set({ fixNow: !filter.fixNow })}
+		>
+			To fix now
+		</Button>
+		<Button
 			variant={filter.knownExploited ? 'secondary' : 'outline'}
 			size="sm"
 			class="h-8"
@@ -235,11 +246,24 @@
 						<Table.Cell>
 							<span class="flex items-center gap-2">
 								<SeverityStrip counts={p.severities} />
+								{#if p.emergency}<FixNowBadge />{/if}
 								{#if p.knownExploited}<ExploitedBadge />{/if}
 							</span>
 						</Table.Cell>
 						<Table.Cell class="tabular-nums">{p.maxCvss ? p.maxCvss.toFixed(1) : '—'}</Table.Cell>
-						<Table.Cell class="font-mono text-xs">{p.updateTo || '—'}</Table.Cell>
+						<Table.Cell class="font-mono text-xs">
+							{#if p.reboot}
+								<Tooltip.Root>
+									<Tooltip.Trigger class="font-sans font-medium text-amber-700 dark:text-amber-400"
+										>Reboot</Tooltip.Trigger
+									>
+									<Tooltip.Content>Kernel {p.reboot} is installed: reboot to run it</Tooltip.Content
+									>
+								</Tooltip.Root>
+							{:else}
+								{p.updateTo || '—'}
+							{/if}
+						</Table.Cell>
 					</Table.Row>
 					{#if open}
 						<Table.Row class="bg-muted/30 hover:bg-muted/30">
@@ -316,6 +340,7 @@
 							{:else}
 								<span class="font-medium">{c.id}</span>
 							{/if}
+							{#if c.emergency}<FixNowBadge />{/if}
 							{#if c.knownExploited}<ExploitedBadge />{/if}
 						</span>
 					</Table.Cell>

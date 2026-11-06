@@ -49,7 +49,8 @@
 	let accepting = $state<{ pkg: PackageRow; cve: Cve } | null>(null);
 	let withdrawing = $state<{ pkg: PackageRow; cve: Cve } | null>(null);
 
-	const refresh = () => invalidate('app:server');
+	// The sidebar's servers are refreshed too, as their status may change.
+	const refresh = () => Promise.all([invalidate('app:server'), invalidate('app:overview')]);
 
 	// Kernels installed but not running: newer ones wait for a reboot, older
 	// ones can be removed.
@@ -94,13 +95,35 @@
 		v ? Object.values(v.server.severities).reduce((n, c) => n + c.open + c.muted, 0) : 0
 	);
 
+	// focus shows the vulnerabilities a card counts.
+	function focus(f: Partial<PackageFilter>) {
+		filter = { ...noFilter, ...f };
+		show('vulnerabilities');
+	}
+
 	const stats = $derived(
 		v
 			? [
-					{ label: 'To fix now', value: v.server.emergencies },
-					{ label: 'Known exploited', value: v.server.knownExploited },
-					{ label: 'Critical', value: v.server.critical },
-					{ label: 'Security updates', value: v.server.securityUpdates }
+					{
+						label: 'To fix now',
+						value: v.server.emergencies,
+						open: () => focus({ fixNow: true })
+					},
+					{
+						label: 'Known exploited',
+						value: v.server.knownExploited,
+						open: () => focus({ knownExploited: true })
+					},
+					{
+						label: 'Critical',
+						value: v.server.critical,
+						open: () => focus({ severities: ['critical'] })
+					},
+					{
+						label: 'Security updates',
+						value: v.server.securityUpdates,
+						open: () => show('updates')
+					}
 				]
 			: []
 	);
@@ -108,7 +131,7 @@
 
 <PageHeader
 	title={v?.server.hostname ?? 'Server'}
-	parent={{ href: overview, label: 'Overview' }}
+	parent={{ href: overview, label: 'Servers' }}
 	{refresh}
 >
 	{#snippet actions()}
@@ -135,7 +158,7 @@
 				<Empty.Title>No such server</Empty.Title>
 			</Empty.Header>
 			<Empty.Content>
-				<Button href={overview}>Back to the overview</Button>
+				<Button href={overview}>Back to servers</Button>
 			</Empty.Content>
 		</Empty.Root>
 	{:else}
@@ -183,12 +206,18 @@
 						</Card.Header>
 					</Card.Root>
 					{#each stats as stat (stat.label)}
-						<Card.Root size="sm">
-							<Card.Header>
-								<Card.Description>{stat.label}</Card.Description>
-								<Card.Title class="text-2xl tabular-nums">{stat.value}</Card.Title>
-							</Card.Header>
-						</Card.Root>
+						<button
+							type="button"
+							class="cursor-pointer rounded-xl text-left transition-shadow outline-none hover:ring-2 hover:ring-ring/30 focus-visible:ring-2 focus-visible:ring-ring/50"
+							onclick={stat.open}
+						>
+							<Card.Root size="sm" class="h-full">
+								<Card.Header>
+									<Card.Description>{stat.label}</Card.Description>
+									<Card.Title class="text-2xl tabular-nums">{stat.value}</Card.Title>
+								</Card.Header>
+							</Card.Root>
+						</button>
 					{/each}
 					<Card.Root size="sm">
 						<Card.Header>

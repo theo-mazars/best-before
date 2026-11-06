@@ -20,6 +20,8 @@ const row = (p: Partial<PackageRow>): PackageRow => ({
 	knownExploited: false,
 	maxCvss: 0,
 	updateTo: '',
+	reboot: '',
+	emergency: false,
 	muted: false,
 	cves: [],
 	...p
@@ -27,7 +29,12 @@ const row = (p: Partial<PackageRow>): PackageRow => ({
 
 describe('filterPackages', () => {
 	const rows = [
-		row({ package: 'openssl', severities: counts({ critical: [1, 0] }), knownExploited: true }),
+		row({
+			package: 'openssl',
+			severities: counts({ critical: [1, 0] }),
+			knownExploited: true,
+			emergency: true
+		}),
 		row({ package: 'curl', where: 'node:22', severities: counts({ high: [0, 1] }) }),
 		row({ package: 'bash', muted: true, severities: counts({ low: [0, 1] }) })
 	];
@@ -42,6 +49,7 @@ describe('filterPackages', () => {
 		expect(names({ where: 'node:22' })).toEqual(['curl']);
 		expect(names({ severities: ['high'] })).toEqual(['curl']);
 		expect(names({ knownExploited: true })).toEqual(['openssl']);
+		expect(names({ fixNow: true })).toEqual(['openssl']);
 	});
 	it('lists the host first', () => {
 		expect(wheres([row({ where: 'b' }), row({ where: 'a' }), row({})])).toEqual(['host', 'a', 'b']);

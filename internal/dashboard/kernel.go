@@ -8,6 +8,7 @@ import (
 
 	"github.com/theo-mazars/best-before/internal/dashboard/store"
 	"github.com/theo-mazars/best-before/internal/dashboard/vulns"
+	"github.com/theo-mazars/best-before/internal/report"
 )
 
 // abiPattern finds a kernel ABI, e.g. 6.8.0-60 in 6.8.0-60-generic or in
@@ -50,6 +51,21 @@ func loadFindings(ctx context.Context, st *store.Store, agentID string) ([]store
 		fs[i].OldKernel = oldKernel(&fs[i], running)
 	}
 	return fs, nil
+}
+
+// newestKernel returns the newest kernel ABI installed, if newer than the
+// running one: it runs after a reboot.
+func newestKernel(installed []report.InstalledPackage, running string) string {
+	newest := running
+	for _, p := range installed {
+		if abi := kernelABI(p.Name); strings.HasPrefix(p.Name, "linux-image-") && newerABI(abi, newest) {
+			newest = abi
+		}
+	}
+	if newest == running {
+		return ""
+	}
+	return newest
 }
 
 // oldKernel says whether a finding is in a kernel package of another ABI

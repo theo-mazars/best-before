@@ -11,6 +11,8 @@
 	import PageHeader from '#lib/components/page-header.svelte';
 	import { clock } from '#lib/clock.svelte.js';
 	import { formatUTC, timeAgo } from '#lib/date.js';
+	import { focuses, type Focus } from '#lib/status.js';
+	import { cn } from '#lib/utils.js';
 	import ServersTable from './servers-table.svelte';
 	import type { PageProps } from './$types';
 
@@ -19,20 +21,17 @@
 	const servers = $derived(data.overview.servers);
 
 	const sum = (f: (s: (typeof servers)[number]) => number) => servers.reduce((n, s) => n + f(s), 0);
-	const stats = $derived([
-		{
-			label: 'Needing action',
-			value: sum((s) => (s.status === 'OK' ? 0 : 1)),
-			of: servers.length
-		},
-		{ label: 'To fix now', value: sum((s) => s.emergencies) },
-		{ label: 'Known exploited', value: sum((s) => s.knownExploited) },
-		{ label: 'Security updates', value: sum((s) => s.securityUpdates) },
-		{ label: 'Reboots pending', value: sum((s) => (s.rebootRequired ? 1 : 0)) }
+	let focus = $state<Focus | null>(null);
+	const stats = $derived<{ focus: Focus; value: number; of?: number }[]>([
+		{ focus: 'action', value: sum((s) => (s.status === 'OK' ? 0 : 1)), of: servers.length },
+		{ focus: 'fixNow', value: sum((s) => s.emergencies) },
+		{ focus: 'exploited', value: sum((s) => s.knownExploited) },
+		{ focus: 'updates', value: sum((s) => s.securityUpdates) },
+		{ focus: 'reboot', value: sum((s) => (s.rebootRequired ? 1 : 0)) }
 	]);
 </script>
 
-<PageHeader title="Overview" refresh={() => invalidate('app:overview')}>
+<PageHeader title="Servers" refresh={() => invalidate('app:overview')}>
 	{#snippet actions()}
 		{#if db.ready}
 			<Tooltip.Root>
@@ -75,20 +74,30 @@
 		</Empty.Root>
 	{:else}
 		<div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-			{#each stats as stat (stat.label)}
-				<Card.Root size="sm">
-					<Card.Header>
-						<Card.Description>{stat.label}</Card.Description>
-						<Card.Title class="text-2xl tabular-nums">
-							{stat.value}
-							{#if stat.of !== undefined}
-								<span class="text-sm font-normal text-muted-foreground">of {stat.of}</span>
-							{/if}
-						</Card.Title>
-					</Card.Header>
-				</Card.Root>
+			{#each stats as stat (stat.focus)}
+				<button
+					type="button"
+					class={cn(
+						'cursor-pointer rounded-xl text-left transition-shadow outline-none hover:ring-2 hover:ring-ring/30 focus-visible:ring-2 focus-visible:ring-ring/50',
+						focus === stat.focus && 'ring-2 ring-ring/60 hover:ring-ring/60'
+					)}
+					aria-pressed={focus === stat.focus}
+					onclick={() => (focus = focus === stat.focus ? null : stat.focus)}
+				>
+					<Card.Root size="sm" class="h-full">
+						<Card.Header>
+							<Card.Description>{focuses[stat.focus].label}</Card.Description>
+							<Card.Title class="text-2xl tabular-nums">
+								{stat.value}
+								{#if stat.of !== undefined}
+									<span class="text-sm font-normal text-muted-foreground">of {stat.of}</span>
+								{/if}
+							</Card.Title>
+						</Card.Header>
+					</Card.Root>
+				</button>
 			{/each}
 		</div>
-		<ServersTable {servers} />
+		<ServersTable {servers} bind:focus />
 	{/if}
 </div>

@@ -61,3 +61,13 @@ export function worstIssue(s: ServerSummary): string {
 	if (s.problems.length) return 'Report incomplete';
 	return '—';
 }
+
+// focuses are the overview's cards: each one shows the servers it counts.
+export const focuses = {
+	action: { label: 'Needing action', test: (s: ServerSummary) => s.status !== 'OK' },
+	fixNow: { label: 'To fix now', test: (s: ServerSummary) => s.emergencies > 0 },
+	exploited: { label: 'Known exploited', test: (s: ServerSummary) => s.knownExploited > 0 },
+	updates: { label: 'Security updates', test: (s: ServerSummary) => s.securityUpdates > 0 },
+	reboot: { label: 'Reboots pending', test: (s: ServerSummary) => s.rebootRequired }
+} as const;
+export type Focus = keyof typeof focuses;

@@ -7,7 +7,7 @@
 </script>
 
 <Sidebar.Provider>
-	<AppSidebar session={data.session} />
+	<AppSidebar session={data.session} servers={data.overview.servers} />
 	<Sidebar.Inset>
 		{@render children()}
 	</Sidebar.Inset>
