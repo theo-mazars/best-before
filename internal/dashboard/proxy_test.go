@@ -146,7 +146,7 @@ func TestLoginBehindProxy(t *testing.T) {
 	if plain.Name != plainSessionCookie || plain.Secure || !plain.HttpOnly || plain.SameSite != http.SameSiteStrictMode {
 		t.Errorf("plain HTTP cookie: %+v", plain)
 	}
-	page := httptest.NewRequest(http.MethodGet, "http://dashboard.vpn/agents", nil)
+	page := httptest.NewRequest(http.MethodGet, "http://dashboard.vpn/api/ui/agents", nil)
 	page.RemoteAddr = "10.0.1.9:40000"
 	page.Header.Set("X-Forwarded-Proto", "http")
 	page.AddCookie(plain)

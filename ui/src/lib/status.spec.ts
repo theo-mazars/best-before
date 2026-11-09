@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ServerSummary } from './api.js';
-import { statusLook, statusRank, worstIssue } from './status.js';
+import { agentLook, agentRank, statusLook, statusRank, worstIssue } from './status.js';
 
 const none = { open: 0, muted: 0 };
 const base: ServerSummary = {
@@ -29,6 +29,14 @@ describe('status', () => {
 		expect(statusLook('attention').label).toBe('Needs attention');
 		expect(statusLook('waiting for first report').label).toBe('Waiting');
 		expect(statusLook('new thing').label).toBe('new thing');
+	});
+
+	it('maps agent statuses to labels and ranks', () => {
+		expect(agentLook('reporting').label).toBe('Reporting');
+		expect(agentLook('waiting').label).toBe('Waiting');
+		expect(agentLook('revoked').label).toBe('Revoked');
+		expect(agentRank('stale')).toBeLessThan(agentRank('reporting'));
+		expect(agentRank('reporting')).toBeLessThan(agentRank('revoked'));
 	});
 
 	it('ranks worst first', () => {

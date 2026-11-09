@@ -89,6 +89,42 @@ func TestEnrolmentCodes(t *testing.T) {
 	}
 }
 
+func TestActiveEnrolmentCodes(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	now := time.Now().Truncate(time.Second)
+	u, err := s.CreateUser(ctx, "admin@example.org", "hash", RoleAdmin, make([]byte, 20), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.CreateEnrolmentCode(ctx, [32]byte{1}, u.ID, now.Add(-time.Minute), now.Add(time.Hour))
+	s.CreateEnrolmentCode(ctx, [32]byte{2}, "", now, now.Add(time.Hour))
+	s.CreateEnrolmentCode(ctx, [32]byte{3}, "", now.Add(-2*time.Hour), now.Add(-time.Hour))
+	s.CreateEnrolmentCode(ctx, [32]byte{4}, "", now, now.Add(time.Hour))
+	s.RedeemEnrolmentCode(ctx, [32]byte{4}, NewAgent{PublicKey: newKey(t), Hostname: "web-01"}, now)
+
+	codes, err := s.ActiveEnrolmentCodes(ctx, now)
+	if err != nil || len(codes) != 2 {
+		t.Fatalf("active codes: %+v, %v", codes, err)
+	}
+	if codes[0].CreatedBy != "admin@example.org" || codes[1].CreatedBy != "" || !codes[0].ExpiresAt.Equal(now.Add(time.Hour)) {
+		t.Errorf("codes: %+v", codes)
+	}
+
+	if err := s.RevokeEnrolmentCode(ctx, codes[0].ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RedeemEnrolmentCode(ctx, [32]byte{1}, NewAgent{PublicKey: newKey(t), Hostname: "x"}, now); !errors.Is(err, ErrCodeInvalid) {
+		t.Errorf("revoked code redeems: %v", err)
+	}
+	if err := s.RevokeEnrolmentCode(ctx, codes[0].ID, now); !errors.Is(err, ErrNotFound) {
+		t.Errorf("revoke twice: %v", err)
+	}
+	if codes, _ := s.ActiveEnrolmentCodes(ctx, now); len(codes) != 1 {
+		t.Errorf("after revoke: %+v", codes)
+	}
+}
+
 func TestRecordReport(t *testing.T) {
 	ctx := context.Background()
 	s, _ := openTest(t)
