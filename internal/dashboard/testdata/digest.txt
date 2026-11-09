@@ -1,34 +1,43 @@
-Best Before weekly digest, 26 Oct 2026, 10:00 UTC to 2 Nov 2026, 10:00 UTC.
+26 Oct 2026, 10:00 UTC to 2 Nov 2026, 10:00 UTC.
 
-EMERGENCIES STILL OPEN
+EMERGENCIES STILL OPEN (1)
 With a fix available, and known exploited, or CVSS 9.0 or more.
 
-web-01 <https://dashboard.example.vpn/servers/web-01-id>
-- CVE-2026-1000 in libc6 2.36-9 (image node:22-slim): known exploited, high, CVSS 7.8, fixed in 2.36-9+deb12u7
+web-01
+https://dashboard.example.vpn/servers/web-01-id
+- CVE-2026-1000 · High · CVSS 7.8 · Known exploited
+  libc6 2.36-9 → 2.36-9+deb12u7 · image node:22-slim
 
-STALE SERVERS
+STALE SERVERS (1)
 No report for too long: their vulnerabilities are unknown.
 
-- db-<01>, never reported <https://dashboard.example.vpn/servers/db-01-id>
+db-<01> · never reported
+https://dashboard.example.vpn/servers/db-01-id
 
 SECURITY UPDATES
 
-web-01 <https://dashboard.example.vpn/servers/web-01-id>
+web-01
+https://dashboard.example.vpn/servers/web-01-id
 - openssl 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6
 
-NEW VULNERABILITIES WITH A FIX
+NEW VULNERABILITIES WITH A FIX (1)
 Severity medium or worse, found or given a fix since the last digest.
 
-web-01 <https://dashboard.example.vpn/servers/web-01-id>
-- CVE-2026-3000 in curl 8.5.0-2ubuntu10.5 (host): high, CVSS 7.5, fixed in 8.5.0-2ubuntu10.6
+web-01
+https://dashboard.example.vpn/servers/web-01-id
+- CVE-2026-3000 · High · CVSS 7.5
+  curl 8.5.0-2ubuntu10.5 → 8.5.0-2ubuntu10.6 · host
 
-ACCEPTED RISKS EXPIRING
+ACCEPTED RISKS EXPIRING (2)
 Expired since the last digest, or expiring within a week. Once expired, they count again.
 
-web-01 <https://dashboard.example.vpn/servers/web-01-id>
-- CVE-2026-2000 in openssl 3.0.13-0ubuntu3.5 (host): critical, CVSS 9.8, fixed in 3.0.13-0ubuntu3.6
+web-01
+https://dashboard.example.vpn/servers/web-01-id
+- CVE-2026-2000 · Critical · CVSS 9.8
+  openssl 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6 · host
   Expires 5 Nov 2026, 10:00 UTC. Accepted: Only reachable <over the VPN>
-- CVE-2026-3000 in curl 8.5.0-2ubuntu10.5 (host): high, CVSS 7.5, fixed in 8.5.0-2ubuntu10.6
+- CVE-2026-3000 · High · CVSS 7.5
+  curl 8.5.0-2ubuntu10.5 → 8.5.0-2ubuntu10.6 · host
   Expired 1 Nov 2026, 10:00 UTC, counts again. Accepted: Waiting for the maintenance window
 
 Vulnerabilities without a fix are not listed: they are on each server's page.

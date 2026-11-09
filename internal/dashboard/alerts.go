@@ -194,7 +194,7 @@ func (a *alerter) checkAgent(ctx context.Context, ag *store.Agent, open map[aler
 			out = append(out, outgoing{msg: &notify.Message{
 				Event:   notify.EventRecovered,
 				Title:   notify.Clean(ag.Hostname) + " is reporting again",
-				Text:    "Last report " + formatDate(ag.LastReportAt) + ".",
+				Summary: "Last report " + formatDate(ag.LastReportAt) + ".",
 				URL:     server,
 				Details: map[string]any{"server": serverDetails(ag)},
 			}})
@@ -254,12 +254,20 @@ func (a *alerter) checkAgent(ctx context.Context, ag *store.Agent, open map[aler
 		slices.SortFunc(fresh, func(x, y store.Alert) int { return strings.Compare(x.Vulnerability, y.Vulnerability) })
 		m := emergencyMessage(ag, fresh, current, names, server)
 		m.Event = notify.EventEmergency
+		m.Summary = "Each has a fix available. Update these packages, or accept the risk on the server's page."
 		m.Title = fmt.Sprintf("Emergency on %s: %s to fix now", notify.Clean(ag.Hostname), plural(len(fresh), "vulnerability", "vulnerabilities"))
 		out = append(out, outgoing{msg: m, alerts: fresh})
 	}
 	if len(reminders) > 0 {
 		m := emergencyMessage(ag, reminders, current, names, server)
 		m.Event = notify.EventReminder
+		first := reminders[0].RaisedAt
+		for _, al := range reminders {
+			if al.RaisedAt.Before(first) {
+				first = al.RaisedAt
+			}
+		}
+		m.Summary = "Open since " + formatDate(first) + ", each with a fix available. Update these packages, or accept the risk on the server's page."
 		m.Title = fmt.Sprintf("Still open on %s: %s", notify.Clean(ag.Hostname), plural(len(reminders), "emergency", "emergencies"))
 		out = append(out, outgoing{msg: m, alerts: reminders})
 	}
@@ -274,7 +282,7 @@ func (a *alerter) staleMessage(ag *store.Agent, server string) *notify.Message {
 	return &notify.Message{
 		Event: notify.EventStale,
 		Title: notify.Clean(ag.Hostname) + " has stopped reporting",
-		Text: since + " (stale after " + a.cfg.StaleAfter.String() + "). The server may be down, or its agent may have stopped. " +
+		Summary: since + " (stale after " + a.cfg.StaleAfter.String() + "). The server may be down, or its agent may have stopped. " +
 			"Until it reports again, its vulnerabilities are unknown.",
 		URL:     server,
 		Details: map[string]any{"server": serverDetails(ag), "last_report_at": ag.LastReportAt},
@@ -295,11 +303,11 @@ type vulnDetails struct {
 }
 
 func emergencyMessage(ag *store.Agent, alerts []store.Alert, current map[string][]store.Finding, names imageLabels, server string) *notify.Message {
-	var lines []string
+	var items []notify.Item
 	var details []vulnDetails
 	for _, al := range alerts {
 		for _, group := range groupByCVE(current[al.Vulnerability]) {
-			lines = append(lines, findingLine(group, names.where(group[0].Target)))
+			items = append(items, findingItem(group, names.where(group[0].Target)))
 		}
 		for _, f := range current[al.Vulnerability] {
 			where := names.where(f.Target)
@@ -309,10 +317,11 @@ func emergencyMessage(ag *store.Agent, alerts []store.Alert, current map[string]
 			})
 		}
 	}
+	notify.SortItems(items)
 	return &notify.Message{
-		Text:    strings.Join(lines, "\n"),
-		URL:     server,
-		Details: map[string]any{"server": serverDetails(ag), "vulnerabilities": details},
+		Sections: []notify.Section{{Groups: []notify.Group{{Items: items}}}},
+		URL:      server,
+		Details:  map[string]any{"server": serverDetails(ag), "vulnerabilities": details},
 	}
 }
 
@@ -336,6 +345,26 @@ func findingLine(group []store.Finding, where string) string {
 	slices.Sort(fixes)
 	return notify.Clean(fmt.Sprintf("%s in %s (%s): %s, fixed in %s",
 		f.Vulnerability, strings.Join(pkgs, ", "), where, strings.Join(why, ", "), strings.Join(slices.Compact(fixes), ", ")))
+}
+
+// findingItem describes a vulnerability on a host or image, with every
+// package it is in there.
+func findingItem(group []store.Finding, where string) notify.Item {
+	f := &group[0]
+	var pkgs, fixes []string
+	for _, g := range group {
+		pkgs = append(pkgs, g.Package+" "+g.Version)
+		fixes = append(fixes, g.FixVersions...)
+	}
+	slices.Sort(fixes)
+	detail := strings.Join(pkgs, ", ")
+	if fixes = slices.Compact(fixes); len(fixes) > 0 {
+		detail += " → " + strings.Join(fixes, ", ")
+	}
+	return notify.Item{
+		Title: notify.Clean(f.Vulnerability), URL: f.URL, Severity: f.Severity, CVSS: f.CVSS,
+		KnownExploited: f.KnownExploited, Detail: notify.Clean(detail), Where: notify.Clean(where),
+	}
 }
 
 func serverDetails(ag *store.Agent) map[string]string {

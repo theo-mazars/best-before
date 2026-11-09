@@ -200,7 +200,7 @@ is listed as not checked.
 Each server has one status, for what there is to do now:
 
 - **Critical:** an open vulnerability worth an emergency alert, as set under
-  **What is worth sending** (by default: known exploited, or CVSS 9.0 or
+  **Settings › Alerts** (by default: known exploited, or CVSS 9.0 or
   more, with a fix available). The status and the alerts follow the same rule.
 - **Needs attention:** security updates to install, a reboot required, or a
   gap: a report with errors, or an image that could not be checked.
@@ -222,10 +222,12 @@ page still lists it under each package, which is what gets updated.
 
 ## Alerts and digest
 
-Under **Settings**, add one or more notification channels: **email** (SMTP),
-**ntfy**, **Discord**, **Slack** or a **webhook** (a JSON POST, for your own
-automation). Each one can receive emergencies, the weekly digest, or both,
-and has a **Send test notification** button.
+Under **Settings › Channels**, **Add channel** adds a notification channel:
+**email** (SMTP), **ntfy**, **Discord**, **Slack** or a **webhook** (a JSON
+POST, for your own automation). Each one can receive emergencies, the weekly
+digest, or both. Its **⋯** menu sends a test notification, edits it or deletes
+it. Saved passwords, tokens and webhook URLs are never shown again: **Replace**
+enters a new one, and **Remove** clears an optional one.
 
 **Emergencies** are sent as soon as they are found, once per server and
 vulnerability. By default, an emergency is a vulnerability **with a fix
@@ -245,8 +247,8 @@ then or expire within a week. With nothing to list, it says all is clear,
 so you know the dashboard is alive. Emails include HTML and plain text
 versions.
 
-What counts as noise is yours to decide, under **Settings › What is worth
-sending**:
+What counts as noise is yours to decide, under **Settings › Alerts** and
+**Settings › Digest**:
 
 - whether being known exploited makes an emergency, and from which CVSS
   score (or none);
@@ -255,7 +257,7 @@ sending**:
 - which sections it has, the lowest severity of the new vulnerabilities it
   lists, and whether it is sent when all is clear.
 
-**Send the digest now** sends one at once, without moving the next.
+On the Digest tab, **Send now** sends one at once, without moving the next.
 
 Alerts found while no channel takes them are not sent later, once one is
 added: the dashboard shows them. When every channel fails, the dashboard tries
@@ -299,12 +301,12 @@ next digest lists it. An acceptance covers one vulnerability on one server's
 host, or on one of its images: in every package affected there, but nowhere
 else. When the image is updated, it is a new image, and is checked afresh.
 
-Under **Settings › Your pages**, each user chooses the lowest severity their
-pages show (low by default). Less severe vulnerabilities are still checked and
+In the user menu, at the bottom of the sidebar, **Show** sets the lowest
+severity your own pages show (low by default). Less severe vulnerabilities are still checked and
 listed on each server's page, greyed out and marked **Below threshold**, but do
 not count towards its status. Vulnerabilities known to be exploited, and those of
 unknown severity, are always shown. This only changes what you see:
-emergencies and the digest follow **What is worth sending**.
+emergencies and the digest follow **Settings › Alerts** and **Digest**.
 
 ## Old kernels
 

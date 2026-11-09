@@ -31,14 +31,16 @@ const (
 	EventTest      = "test"
 )
 
-// Message is one notification. Title and Text are plain text: each channel
-// escapes them for its own format.
+// Message is one notification. All its text is plain: each channel escapes
+// it, and lays it out in its own format.
 type Message struct {
 	Event string
 	Title string
-	Text  string
-	// HTML is an alternative to Text for email; empty for plain text only.
-	HTML string
+	// Summary comes first, e.g. what happened or the period covered.
+	Summary  string
+	Sections []Section
+	// Footer comes last, e.g. what the message leaves out.
+	Footer string
 	// URL is the dashboard page to open, if public_url is set.
 	URL string
 	// Details are sent to webhooks as they are, encoded as JSON.

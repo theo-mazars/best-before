@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
+	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import { setMode, userPrefersMode } from 'mode-watcher';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -11,18 +13,36 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { api, type ServerSummary, type Session } from '#lib/api.js';
+	import { api, ApiError, type ServerSummary, type Session } from '#lib/api.js';
 	import { statusLook } from '#lib/status.js';
 	import { cn } from '#lib/utils.js';
 	import Logo from './logo.svelte';
 
 	let { session, servers }: { session: Session; servers: ServerSummary[] } = $props();
 
-	// Settings is still a server page: it needs a full load.
 	const nav = [
-		{ href: resolve('/(app)/agents'), label: 'Agents', icon: KeyRoundIcon, reload: false },
-		{ href: '/settings', label: 'Settings', icon: SettingsIcon, reload: true }
+		{ href: resolve('/(app)/agents'), label: 'Agents', icon: KeyRoundIcon },
+		{ href: resolve('/(app)/settings'), label: 'Settings', icon: SettingsIcon }
 	];
+
+	// The lowest severity the user's own pages show.
+	const shows = [
+		{ value: 'critical', label: 'Critical' },
+		{ value: 'high', label: 'High or worse' },
+		{ value: 'medium', label: 'Medium or worse' },
+		{ value: 'low', label: 'Low or worse' },
+		{ value: 'negligible', label: 'Everything' }
+	];
+
+	async function show(minSeverity: string) {
+		if (minSeverity === session.minSeverity) return;
+		try {
+			await api('PUT', '/preferences', { minSeverity });
+			await invalidateAll();
+		} catch (err) {
+			toast.error(err instanceof ApiError ? err.message : 'Something went wrong.');
+		}
+	}
 
 	// The first servers, worst first as the API sorts them, for quick access.
 	const quick = 8;
@@ -119,8 +139,7 @@
 							tooltipContent={item.label}
 						>
 							{#snippet child({ props })}
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- server pages until migrated -->
-								<a href={item.href} data-sveltekit-reload={item.reload || undefined} {...props}>
+								<a href={item.href} {...props}>
 									<item.icon />
 									<span>{item.label}</span>
 								</a>
@@ -163,6 +182,13 @@
 							<DropdownMenu.RadioItem value="light">Light</DropdownMenu.RadioItem>
 							<DropdownMenu.RadioItem value="dark">Dark</DropdownMenu.RadioItem>
 							<DropdownMenu.RadioItem value="system">System</DropdownMenu.RadioItem>
+						</DropdownMenu.RadioGroup>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Label class="text-xs text-muted-foreground">Show</DropdownMenu.Label>
+						<DropdownMenu.RadioGroup value={session.minSeverity} onValueChange={show}>
+							{#each shows as s (s.value)}
+								<DropdownMenu.RadioItem value={s.value}>{s.label}</DropdownMenu.RadioItem>
+							{/each}
 						</DropdownMenu.RadioGroup>
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item onSelect={logout}>

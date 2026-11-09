@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 	"net"
@@ -61,10 +62,14 @@ func send(t *testing.T, typ string, v Values, m *Message) error {
 }
 
 var hostileMessage = &Message{
-	Event: EventEmergency,
-	Title: "Emergency on web-01",
-	Text:  "CVE-2026-0001 in [click](https://evil.example) @everyone <!channel> *bold* & more",
-	URL:   "https://dashboard.example.vpn/servers/abc",
+	Event:   EventEmergency,
+	Title:   "Emergency on web-01",
+	Summary: "CVE-2026-0001 in [click](https://evil.example) @everyone <!channel> *bold* & more",
+	Sections: []Section{{Groups: []Group{{Items: []Item{{
+		Title: "CVE-2026-0001", URL: "https://evil.example/a)[x](https://worse.example", Severity: "critical",
+		Detail: "pkg-[click](https://evil.example) @here", Where: "host",
+	}}}}}},
+	URL: "https://dashboard.example.vpn/servers/abc",
 }
 
 func TestValidation(t *testing.T) {
@@ -114,7 +119,7 @@ func TestNtfy(t *testing.T) {
 	}
 	body, h := <-c.bodies, <-c.header
 	if body["topic"] != "bb-alerts" || body["title"] != "Emergency on web-01" || body["priority"] != 5.0 ||
-		body["click"] != hostileMessage.URL || body["message"] != hostileMessage.Text {
+		body["click"] != hostileMessage.URL || body["message"] != hostileMessage.Text() {
 		t.Errorf("body: %v", body)
 	}
 	if h.Get("Authorization") != "Bearer tk_1" {
@@ -122,7 +127,7 @@ func TestNtfy(t *testing.T) {
 	}
 
 	// The digest does not ring.
-	send(t, "ntfy", Values{"server": c.srv.URL, "topic": "t"}, &Message{Event: EventDigest, Title: "Digest", Text: "x"})
+	send(t, "ntfy", Values{"server": c.srv.URL, "topic": "t"}, &Message{Event: EventDigest, Title: "Digest", Summary: "x"})
 	if body, h := <-c.bodies, <-c.header; body["priority"] != 3.0 || h.Get("Authorization") != "" {
 		t.Errorf("digest: %v %v", body, h)
 	}
@@ -134,23 +139,61 @@ func TestDiscord(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := <-c.bodies
-	content, _ := body["content"].(string)
-	if !strings.HasPrefix(content, "**Emergency on web-01**\n") || !strings.HasSuffix(content, "\n"+hostileMessage.URL) {
-		t.Errorf("content: %q", content)
+	raw, _ := json.Marshal(body["embeds"])
+	var embeds []DiscordEmbed
+	if err := json.Unmarshal(raw, &embeds); err != nil || len(embeds) != 1 {
+		t.Fatalf("embeds: %s", raw)
 	}
-	for _, bad := range []string{"[click](", "@everyone", "*bold*"} {
-		if strings.Contains(content, bad) {
-			t.Errorf("content keeps %q: %q", bad, content)
+	e := embeds[0]
+	if e.Title != "Emergency on web-01" || e.URL != hostileMessage.URL || e.Color != 0xdc2626 || e.Footer == nil {
+		t.Errorf("embed: %+v", e)
+	}
+	for _, bad := range []string{"[click](", "@everyone", "@here", "*bold*", "evil.example/a)", "worse.example"} {
+		if strings.Contains(e.Description, bad) {
+			t.Errorf("description keeps %q: %q", bad, e.Description)
 		}
+	}
+	if !strings.Contains(e.Description, "🔴 **CVE-2026-0001** · Critical") {
+		t.Errorf("description: %q", e.Description)
 	}
 	if m, _ := body["allowed_mentions"].(map[string]any); m == nil || len(m["parse"].([]any)) != 0 {
 		t.Errorf("allowed_mentions: %v", body["allowed_mentions"])
 	}
+}
 
-	long := &Message{Title: "t", Text: strings.Repeat("CVE-2026-0001 in openssl\n", 200)}
-	send(t, "discord", Values{"webhook_url": c.srv.URL}, long)
-	if content := (<-c.bodies)["content"].(string); len(content) > 2000 || !strings.HasSuffix(content, "more on the dashboard.") {
-		t.Errorf("long message: %d bytes, ends %q", len(content), content[len(content)-30:])
+// What does not fit in Discord's limits is left out, the least urgent
+// first, and counted.
+func TestDiscordLimits(t *testing.T) {
+	var minor, major []Item
+	for i := range 300 {
+		minor = append(minor, Item{Title: fmt.Sprintf("CVE-2026-%04d", i), Severity: "low", CVSS: 3.1,
+			Detail: "libfoo 1.0 → 1.1", Where: "image registry.example/app:latest"})
+	}
+	major = append(major, Item{Title: "CVE-2026-9999", Severity: "critical", CVSS: 9.8, KnownExploited: true, Where: "host"})
+	m := &Message{Event: EventDigest, Title: strings.Repeat("T", 300), Summary: "Last week.", URL: "https://dashboard.example.vpn",
+		Sections: []Section{
+			{Title: "New vulnerabilities", Groups: []Group{{Title: "web-01", Items: minor}, {Title: "web-02", Items: append(minor[:10:10], major...)}}},
+			{Title: "Stale servers", Groups: []Group{{Title: "db-01", Note: "never reported"}}},
+		}}
+	embeds := DiscordEmbeds(m, time.Now())
+	total := 0
+	for _, e := range embeds {
+		total += runes(e.Title) + runes(e.Description)
+		if e.Footer != nil {
+			total += runes(e.Footer.Text)
+		}
+		if runes(e.Description) > 4096 || runes(e.Title) > 256 {
+			t.Errorf("embed too long: %d, %d", runes(e.Title), runes(e.Description))
+		}
+	}
+	if len(embeds) != 3 || total > 6000 {
+		t.Fatalf("%d embeds, %d characters", len(embeds), total)
+	}
+	if d := embeds[1].Description; !strings.Contains(d, "CVE-2026-9999") || !strings.Contains(d, "more on the dashboard](https://dashboard.example.vpn)") {
+		t.Errorf("most urgent left out, or not counted:\n%s", d)
+	}
+	if !strings.Contains(embeds[2].Description, "db-01") {
+		t.Errorf("later section crowded out: %q", embeds[2].Description)
 	}
 }
 
@@ -173,7 +216,7 @@ func TestWebhook(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, h := <-c.bodies, <-c.header
-	if body["event"] != "emergency" || body["text"] != m.Text || body["url"] != m.URL || body["sent_at"] == "" ||
+	if body["event"] != "emergency" || body["text"] != m.Text() || body["url"] != m.URL || body["sent_at"] == "" ||
 		body["details"].(map[string]any)["server"].(map[string]any)["hostname"] != "web-01" {
 		t.Errorf("body: %v", body)
 	}
@@ -273,11 +316,10 @@ func fakeSMTP(t *testing.T) (port string, got chan string) {
 func TestEmail(t *testing.T) {
 	port, got := fakeSMTP(t)
 	m := &Message{
-		Event: EventDigest,
-		Title: "Digest for web-01\r\nBcc: victim@example.org",
-		Text:  "Plain text, with = and été.",
-		HTML:  "<p>HTML</p>",
-		URL:   "https://dashboard.example.vpn",
+		Event:   EventDigest,
+		Title:   "Digest for web-01\r\nBcc: victim@example.org",
+		Summary: "Plain text, with = and été <b>.",
+		URL:     "https://dashboard.example.vpn",
 	}
 	v := Values{"host": "127.0.0.1", "port": port, "security": "none", "username": "bb", "password": "pw",
 		"from": "Best Before <bb@example.org>", "to": "ops@example.org, Sam <sam@example.org>"}
@@ -289,7 +331,8 @@ func TestEmail(t *testing.T) {
 		"MAIL FROM:<bb@example.org>", "RCPT TO:<ops@example.org>", "RCPT TO:<sam@example.org>",
 		`From: "Best Before" <bb@example.org>`, "Auto-Submitted: auto-generated",
 		"Content-Type: multipart/alternative", "Content-Type: text/plain; charset=utf-8", "Content-Type: text/html; charset=utf-8",
-		"Plain text, with =3D and =C3=A9t=C3=A9.", "https://dashboard.example.vpn",
+		"Plain text, with =3D and =C3=A9t=C3=A9 <b>.", "https://dashboard.example.vpn",
+		"=C3=A9t=C3=A9 &lt;b&gt;.", "Open in Best Before",
 	} {
 		if !strings.Contains(transcript, want) {
 			t.Errorf("message lacks %q:\n%s", want, transcript)

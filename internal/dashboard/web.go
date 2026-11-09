@@ -69,7 +69,7 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		return nil, err
 	}
 	funcs := template.FuncMap{"date": formatDate}
-	for _, page := range []string{"error", "settings", "channel"} {
+	for _, page := range []string{"error"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -100,20 +100,18 @@ func (w *web) routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/ui/agents/codes", page(w.apiAdmin(w.createCode)))
 	mux.Handle("DELETE /api/ui/agents/codes/{id}", page(w.apiAdmin(w.revokeCode)))
 	mux.Handle("POST /api/ui/agents/{id}/revoke", page(w.apiAdmin(w.revoke)))
+	mux.Handle("GET /api/ui/settings", page(w.apiAdmin(w.settings)))
+	mux.Handle("PUT /api/ui/settings/alerts", page(w.apiAdmin(w.saveAlertSettings)))
+	mux.Handle("POST /api/ui/settings/digest", page(w.apiAdmin(w.sendDigest)))
+	mux.Handle("POST /api/ui/settings/channels", page(w.apiAdmin(w.createChannel)))
+	mux.Handle("PUT /api/ui/settings/channels/{id}", page(w.apiAdmin(w.updateChannel)))
+	mux.Handle("DELETE /api/ui/settings/channels/{id}", page(w.apiAdmin(w.deleteChannel)))
+	mux.Handle("POST /api/ui/settings/channels/{id}/test", page(w.apiAdmin(w.testChannel)))
+	mux.Handle("PUT /api/ui/preferences", page(w.apiAdmin(w.savePreferences)))
 	for _, m := range []string{"GET", "POST", "PUT", "DELETE"} {
 		mux.Handle(m+" /api/ui/", page(http.HandlerFunc(w.apiNotFound)))
 	}
 	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
-	mux.Handle("GET /settings", page(w.admin(w.settingsPage)))
-	mux.Handle("POST /settings/alerts", page(w.admin(w.saveAlertSettings)))
-	mux.Handle("POST /settings/digest", page(w.admin(w.sendDigest)))
-	mux.Handle("POST /settings/view", page(w.admin(w.saveView)))
-	mux.Handle("GET /settings/channels/new", page(w.admin(w.newChannelPage)))
-	mux.Handle("POST /settings/channels", page(w.admin(w.createChannel)))
-	mux.Handle("GET /settings/channels/{id}", page(w.admin(w.channelPage)))
-	mux.Handle("POST /settings/channels/{id}", page(w.admin(w.updateChannel)))
-	mux.Handle("POST /settings/channels/{id}/delete", page(w.admin(w.deleteChannel)))
-	mux.Handle("POST /settings/channels/{id}/test", page(w.admin(w.testChannel)))
 }
 
 func (w *web) headers(h http.Handler) http.Handler {
@@ -128,26 +126,6 @@ func (w *web) headers(h http.Handler) http.Handler {
 			hd.Set("Strict-Transport-Security", "max-age=31536000")
 		}
 		h.ServeHTTP(rw, r)
-	})
-}
-
-// admin requires a session of a user with the admin role.
-func (w *web) admin(h func(http.ResponseWriter, *http.Request, *store.User)) http.Handler {
-	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		u, err := w.currentUser(rw, r)
-		if err != nil {
-			w.fail(rw, r, err)
-			return
-		}
-		if u == nil {
-			http.Redirect(rw, r, "/login", http.StatusSeeOther)
-			return
-		}
-		if u.Role != store.RoleAdmin {
-			w.render(rw, http.StatusForbidden, "error", map[string]any{"Message": "This page is for administrators only."})
-			return
-		}
-		h(rw, r, u)
 	})
 }
 

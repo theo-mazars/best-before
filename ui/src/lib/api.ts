@@ -147,3 +147,68 @@ export type ActiveCode = { id: string; createdBy: string; createdAt: string; exp
 export type AgentsPage = { agents: Agent[]; codes: ActiveCode[]; canEnrol: boolean };
 
 export type EnrolmentCode = { command: string; expiresAt: string };
+
+export type AlertsForm = {
+	emergencyKnownExploited: boolean;
+	emergencyMinCvss: number | null;
+	reminderDays: number;
+	digestWeekday: number | null;
+	digestTime: string;
+	digestTimezone: string;
+	digestEmergencies: boolean;
+	digestStale: boolean;
+	digestUpdates: boolean;
+	digestNewMinSeverity: string;
+	digestAccepted: boolean;
+	digestAllClear: boolean;
+};
+
+export type ChannelField = {
+	name: string;
+	label: string;
+	help?: string;
+	secret: boolean;
+	required: boolean;
+	default?: string;
+	options?: string[];
+};
+
+export type ChannelType = {
+	name: string;
+	label: string;
+	help: string;
+	digest: boolean;
+	fields: ChannelField[];
+};
+
+export type ChannelView = {
+	id: string;
+	name: string;
+	type: string;
+	typeLabel: string;
+	emergencies: boolean;
+	digest: boolean;
+	problem?: string;
+	updatedAt: string;
+	values: Record<string, string>;
+	saved: string[];
+};
+
+export type ChannelForm = {
+	type?: string;
+	name: string;
+	emergencies: boolean;
+	digest: boolean;
+	values: Record<string, string>;
+	remove: string[];
+};
+
+export type SettingsPage = {
+	alerts: AlertsForm;
+	emergencyRule: string;
+	nextDigestAt: string | null;
+	lastDigestAt: string | null;
+	channels: ChannelView[];
+	types: ChannelType[];
+	publicUrlMissing: boolean;
+};
