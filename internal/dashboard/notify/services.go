@@ -36,7 +36,7 @@ func (n *ntfy) Send(ctx context.Context, m *Message) error {
 	body := map[string]any{
 		"topic":    n.topic,
 		"title":    m.Title,
-		"message":  truncate(m.Text, 4000),
+		"message":  truncate(m.Text(), 4000),
 		"priority": priority,
 		"tags":     tags,
 	}
@@ -64,21 +64,6 @@ var discordType = &Type{
 		}
 		return &discord{url: v["webhook_url"]}, nil
 	},
-}
-
-type discord struct{ url string }
-
-// https://discord.com/developers/docs/resources/webhook#execute-webhook
-func (d *discord) Send(ctx context.Context, m *Message) error {
-	content := "**" + discordEscape(m.Title) + "**\n" + discordEscape(m.Text)
-	if m.URL != "" {
-		content += "\n" + m.URL
-	}
-	return postJSON(ctx, d.url, map[string]any{
-		"content": truncate(content, 2000),
-		// Names from servers must never ping @everyone.
-		"allowed_mentions": map[string]any{"parse": []string{}},
-	})
 }
 
 // discordEscape stops Discord's Markdown from reading formatting, links or
@@ -110,7 +95,7 @@ type slack struct{ url string }
 
 // https://api.slack.com/messaging/webhooks
 func (s *slack) Send(ctx context.Context, m *Message) error {
-	text := "*" + slackEscape(m.Title) + "*\n" + slackEscape(m.Text)
+	text := "*" + slackEscape(m.Title) + "*\n" + slackEscape(m.Text())
 	if m.URL != "" {
 		text += "\n<" + m.URL + ">"
 	}
@@ -145,7 +130,7 @@ func (w *webhook) Send(ctx context.Context, m *Message) error {
 	return postJSON(ctx, w.url, map[string]any{
 		"event":   m.Event,
 		"title":   m.Title,
-		"text":    m.Text,
+		"text":    m.Text(),
 		"url":     m.URL,
 		"sent_at": time.Now().UTC().Format(time.RFC3339),
 		"details": m.Details,

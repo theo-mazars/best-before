@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,7 +171,7 @@ func TestCountedPerVulnerability(t *testing.T) {
 	}
 	// Only the package with a fix is an emergency: the old kernel's fix
 	// doesn't count.
-	if text := got[0]["text"]; text != "CVE-2026-7000 in linux-modules-6.8.0-60-generic 1 (host): critical, CVSS 9.8, fixed in 2" {
+	if text, _ := got[0]["text"].(string); !strings.HasSuffix(text, "\n\n- CVE-2026-7000 · Critical · CVSS 9.8\n  linux-modules-6.8.0-60-generic 1 → 2 · host") {
 		t.Errorf("text: %q", text)
 	}
 	settings, _ = at.store.AlertSettings(at.ctx)

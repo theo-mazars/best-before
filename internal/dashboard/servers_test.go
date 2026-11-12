@@ -226,10 +226,10 @@ func TestThresholdAndAcceptedRisks(t *testing.T) {
 
 	// From high up, the medium curl finding is hidden; the exploited zlib
 	// one is not, whatever its severity.
-	if rec := tw.do(http.MethodPost, "/settings/view", url.Values{"min_severity": {"high"}}, admin); rec.Code != http.StatusOK {
+	if rec := tw.json(http.MethodPut, "/api/ui/preferences", map[string]string{"minSeverity": "high"}, admin); rec.Code != http.StatusNoContent {
 		t.Fatalf("threshold: HTTP %d", rec.Code)
 	}
-	if rec := tw.do(http.MethodPost, "/settings/view", url.Values{"min_severity": {"unknown"}}, admin); rec.Code != http.StatusBadRequest {
+	if rec := tw.json(http.MethodPut, "/api/ui/preferences", map[string]string{"minSeverity": "unknown"}, admin); rec.Code != http.StatusBadRequest {
 		t.Errorf("unknown threshold: HTTP %d", rec.Code)
 	}
 	v := tw.server(admin, a.ID)

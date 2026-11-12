@@ -1,0 +1,37 @@
+[
+  {
+    "title": "Weekly digest: 1 emergency, 1 stale server",
+    "url": "https://dashboard.example.vpn",
+    "description": "26 Oct 2026, 10:00 UTC to 2 Nov 2026, 10:00 UTC.",
+    "color": 2450411
+  },
+  {
+    "title": "Emergencies still open (1)",
+    "description": "-# With a fix available, and known exploited, or CVSS 9.0 or more.\n\n**[web-01](https://dashboard.example.vpn/servers/web-01-id)**\n🟠 **[CVE-2026-1000](https://security-tracker.debian.org/tracker/CVE-2026-1000)** · High · CVSS 7.8 · **Known exploited**\n-# libc6 2.36-9 → 2.36-9+deb12u7 · image node:22-slim",
+    "color": 14427686
+  },
+  {
+    "title": "Stale servers (1)",
+    "description": "-# No report for too long: their vulnerabilities are unknown.\n\n**[db-\\\u003c01\\\u003e](https://dashboard.example.vpn/servers/db-01-id)** · never reported",
+    "color": 14251782
+  },
+  {
+    "title": "Security updates",
+    "description": "**[web-01](https://dashboard.example.vpn/servers/web-01-id)**\n• **openssl** 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6",
+    "color": 2450411
+  },
+  {
+    "title": "New vulnerabilities with a fix (1)",
+    "description": "-# Severity medium or worse, found or given a fix since the last digest.\n\n**[web-01](https://dashboard.example.vpn/servers/web-01-id)**\n🟠 **CVE-2026-3000** · High · CVSS 7.5\n-# curl 8.5.0-2ubuntu10.5 → 8.5.0-2ubuntu10.6 · host",
+    "color": 14251782
+  },
+  {
+    "title": "Accepted risks expiring (2)",
+    "description": "-# Expired since the last digest, or expiring within a week. Once expired, they count again.\n\n**[web-01](https://dashboard.example.vpn/servers/web-01-id)**\n🔴 **[CVE-2026-2000](https://ubuntu.com/security/CVE-2026-2000)** · Critical · CVSS 9.8\n-# openssl 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6 · host\n-# Expires 5 Nov 2026, 10:00 UTC. Accepted: Only reachable \\\u003cover the VPN\\\u003e\n🟠 **CVE-2026-3000** · High · CVSS 7.5\n-# curl 8.5.0-2ubuntu10.5 → 8.5.0-2ubuntu10.6 · host\n-# Expired 1 Nov 2026, 10:00 UTC, counts again. Accepted: Waiting for the maintenance window",
+    "color": 4144966,
+    "footer": {
+      "text": "Vulnerabilities without a fix are not listed: they are on each server's page. · Best Before"
+    },
+    "timestamp": "2026-11-02T10:00:00Z"
+  }
+]

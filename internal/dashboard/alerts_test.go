@@ -161,8 +161,9 @@ func TestEmergencies(t *testing.T) {
 	}
 	text := got[0]["text"].(string)
 	for _, want := range []string{
-		"CVE-2026-1000 in libc6 2.36-9 (image node:22-slim): known exploited, high, CVSS 7.8, fixed in 2.36-9+deb12u7",
-		"CVE-2026-2000 in openssl 3.0.13-0ubuntu3.5 (host): critical, CVSS 9.8, fixed in 3.0.13-0ubuntu3.6",
+		// The known exploited one first.
+		"- CVE-2026-1000 · High · CVSS 7.8 · Known exploited\n  libc6 2.36-9 → 2.36-9+deb12u7 · image node:22-slim\n" +
+			"- CVE-2026-2000 · Critical · CVSS 9.8\n  openssl 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6 · host",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text lacks %q:\n%s", want, text)
@@ -413,18 +414,24 @@ func TestDigestGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Title != "Best Before weekly digest: 1 emergency, 1 stale server, 1 server with security updates, 1 new vulnerability, 2 accepted risks expiring" {
+	if m.Title != "Weekly digest: 1 emergency, 1 stale server" {
 		t.Errorf("title: %q", m.Title)
 	}
-	golden(t, "digest.txt", ids.Replace(m.Text))
-	golden(t, "digest.html", ids.Replace(m.HTML))
+	golden(t, "digest.txt", ids.Replace(m.Text()))
+	html, err := m.HTML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "digest.html", ids.Replace(html))
+	embeds, _ := json.MarshalIndent(notify.DiscordEmbeds(m, at.now), "", "  ")
+	golden(t, "digest-discord.json", ids.Replace(string(embeds)))
 
 	empty := &digest{Since: at.now.Add(-7 * 24 * time.Hour), Until: at.now}
 	m, _ = empty.message()
-	if m.Title != "Best Before weekly digest: all clear" {
+	if m.Title != "Weekly digest: all clear" {
 		t.Errorf("title: %q", m.Title)
 	}
-	golden(t, "digest-all-clear.txt", m.Text)
+	golden(t, "digest-all-clear.txt", m.Text())
 }
 
 // The digest says only what the settings ask for, and keeps quiet when
@@ -448,8 +455,8 @@ func TestDigestSections(t *testing.T) {
 		t.Errorf("digest: %+v", d)
 	}
 	m, _ := d.message()
-	if !strings.Contains(m.Text, "With a fix available, and known exploited, or CVSS 9.0 or more.") {
-		t.Errorf("text:\n%s", m.Text)
+	if !strings.Contains(m.Text(), "With a fix available, and known exploited, or CVSS 9.0 or more.") {
+		t.Errorf("text:\n%s", m.Text())
 	}
 
 	// Nothing left to say: not sent, but its turn is used up.
@@ -467,7 +474,7 @@ func TestDigestSections(t *testing.T) {
 	if sent, tried, err := at.al.sendDigestNow(at.ctx); err != nil || sent != 1 || tried != 1 {
 		t.Errorf("send now: %d of %d, %v", sent, tried, err)
 	}
-	if got := at.hook.take(); len(got) != 1 || got[0]["title"] != "Best Before weekly digest: all clear" {
+	if got := at.hook.take(); len(got) != 1 || got[0]["title"] != "Weekly digest: all clear" {
 		t.Errorf("send now: %v", titles(got))
 	}
 }

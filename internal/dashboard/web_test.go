@@ -180,18 +180,8 @@ func TestPagesNeedAdminSession(t *testing.T) {
 	tw := newTestWeb(t, "")
 	tw.addUser("user@example.org", store.RoleUser)
 
-	if rec := tw.do(http.MethodGet, "/settings", nil, nil); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
-		t.Errorf("no session: HTTP %d", rec.Code)
-	}
 	forged := &http.Cookie{Name: sessionCookie, Value: "made-up"}
-	if rec := tw.do(http.MethodGet, "/settings", nil, forged); rec.Code != http.StatusSeeOther {
-		t.Errorf("forged session: HTTP %d", rec.Code)
-	}
-	if rec := tw.do(http.MethodGet, "/settings", nil, tw.session("user@example.org")); rec.Code != http.StatusForbidden {
-		t.Errorf("user role: HTTP %d", rec.Code)
-	}
-
-	for _, path := range []string{"/api/ui/overview", "/api/ui/agents"} {
+	for _, path := range []string{"/api/ui/overview", "/api/ui/agents", "/api/ui/settings"} {
 		if rec := tw.do(http.MethodGet, path, nil, nil); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s without session: HTTP %d", path, rec.Code)
 		}
@@ -208,7 +198,7 @@ func TestPagesNeedAdminSession(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"agents":[]`) {
 		t.Errorf("admin: HTTP %d %s", rec.Code, rec.Body)
 	}
-	if csp := tw.do(http.MethodGet, "/settings", nil, admin).Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
+	if csp := tw.do(http.MethodGet, "/", nil, admin).Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
 		t.Errorf("CSP: %q", csp)
 	}
 

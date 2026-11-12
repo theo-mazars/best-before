@@ -137,17 +137,20 @@ func (e *email) Send(ctx context.Context, m *Message) error {
 	return c.Quit()
 }
 
-// compose writes the message, with plain text and HTML versions when there
-// is HTML.
+// compose writes the message, with plain text and HTML versions.
 func (e *email) compose(m *Message, now time.Time) ([]byte, error) {
 	var b bytes.Buffer
 	to := make([]string, len(e.to))
 	for i, a := range e.to {
 		to[i] = a.String()
 	}
-	text := m.Text
+	text := m.Text()
 	if m.URL != "" {
-		text += "\n\n" + m.URL
+		text += "\n\nOpen in Best Before: " + m.URL
+	}
+	html, err := m.HTML()
+	if err != nil {
+		return nil, err
 	}
 	header := [][2]string{
 		{"From", e.from.String()},
@@ -163,16 +166,9 @@ func (e *email) compose(m *Message, now time.Time) ([]byte, error) {
 		fmt.Fprintf(&b, "%s: %s\r\n", h[0], h[1])
 	}
 
-	if m.HTML == "" {
-		b.WriteString("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
-		if err := writeQP(&b, text); err != nil {
-			return nil, err
-		}
-		return b.Bytes(), nil
-	}
 	mw := multipart.NewWriter(&b)
 	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", mw.Boundary())
-	for _, part := range []struct{ kind, body string }{{"text/plain", text}, {"text/html", m.HTML}} {
+	for _, part := range []struct{ kind, body string }{{"text/plain", text}, {"text/html", html}} {
 		w, err := mw.CreatePart(textproto.MIMEHeader{
 			"Content-Type":              {part.kind + "; charset=utf-8"},
 			"Content-Transfer-Encoding": {"quoted-printable"},

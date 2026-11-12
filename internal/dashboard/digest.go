@@ -1,14 +1,11 @@
 package dashboard
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	htmltemplate "html/template"
 	"strings"
-	"text/template"
 	"time"
 	_ "time/tzdata" // digest time zones, even without tzdata on the system
 
@@ -17,16 +14,10 @@ import (
 	"github.com/theo-mazars/best-before/internal/report"
 )
 
-var (
-	digestText = template.Must(template.New("digest.txt").Funcs(template.FuncMap{"date": formatDate}).
-			ParseFS(webFiles, "web/mail/digest.txt"))
-	digestHTML = htmltemplate.Must(htmltemplate.New("digest.html").Funcs(htmltemplate.FuncMap{"date": formatDate}).
-			ParseFS(webFiles, "web/mail/digest.html"))
-)
-
 // digest is what the weekly digest says, in the order of plan 6.2. Every
-// value from agents is cleaned for plain text; the HTML version escapes it
-// as well.
+// value from agents is cleaned for plain text; each channel escapes it as
+// well. Webhooks receive it as it is, as details: the fields marked "-" are
+// only for laying the message out.
 type digest struct {
 	Since, Until time.Time
 	DashboardURL string
@@ -47,9 +38,10 @@ type digestServer struct {
 }
 
 type digestFinding struct {
-	Line string // the finding on one line of text
-	Note string // more about it, e.g. why it was accepted
-	URL  string // its advisory
+	Line string      // the finding on one line of text
+	Note string      // more about it, e.g. why it was accepted
+	URL  string      // its advisory
+	Item notify.Item `json:"-"`
 }
 
 type staleServer struct {
@@ -63,15 +55,18 @@ type updatesServer struct {
 	URL            string
 	Packages       []string // "openssl 3.0.13-0ubuntu3.5 → 3.0.13-0ubuntu3.6"
 	RebootRequired bool
+	Items          []notify.Item `json:"-"`
 }
 
 func (d *digest) AllClear() bool {
 	return len(d.Emergencies)+len(d.Stale)+len(d.Updates)+len(d.New)+len(d.Accepted) == 0
 }
 
+// title is short enough for a subject line: it names the two most
+// important things, and the message says the rest.
 func (d *digest) title() string {
 	if d.AllClear() {
-		return "Best Before weekly digest: all clear"
+		return "Weekly digest: all clear"
 	}
 	var parts []string
 	count := func(servers []digestServer) (n int) {
@@ -86,16 +81,16 @@ func (d *digest) title() string {
 	if n := len(d.Stale); n > 0 {
 		parts = append(parts, plural(n, "stale server", "stale servers"))
 	}
-	if n := len(d.Updates); n > 0 {
-		parts = append(parts, plural(n, "server", "servers")+" with security updates")
-	}
 	if n := count(d.New); n > 0 {
 		parts = append(parts, plural(n, "new vulnerability", "new vulnerabilities"))
+	}
+	if n := len(d.Updates); n > 0 {
+		parts = append(parts, "updates on "+plural(n, "server", "servers"))
 	}
 	if n := count(d.Accepted); n > 0 {
 		parts = append(parts, plural(n, "accepted risk", "accepted risks")+" expiring")
 	}
-	return "Best Before weekly digest: " + strings.Join(parts, ", ")
+	return "Weekly digest: " + strings.Join(parts[:min(len(parts), 2)], ", ")
 }
 
 // buildDigest gathers what has happened since the last digest, in the
@@ -133,6 +128,7 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 			for _, p := range body.Host.APT.Upgradable {
 				if p.Security {
 					u.Packages = append(u.Packages, notify.Clean(p.Name+" "+p.CurrentVersion+" → "+p.CandidateVersion))
+					u.Items = append(u.Items, notify.Item{Title: notify.Clean(p.Name), Detail: notify.Clean(p.CurrentVersion + " → " + p.CandidateVersion)})
 				}
 			}
 			if s.DigestUpdates && len(u.Packages) > 0 {
@@ -177,7 +173,7 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 				r.ExpiresAt.After(since) && !r.ExpiresAt.After(now.Add(7*24*time.Hour)) {
 				if fixable := pick((*store.Finding).Fixable); len(fixable) > 0 {
 					expiring.Findings = append(expiring.Findings,
-						digestFinding{Line: findingLine(fixable, where), Note: acceptedNote(&r, now), URL: first.URL})
+						digestFinding{Line: findingLine(fixable, where), Note: acceptedNote(&r, now), URL: first.URL, Item: findingItem(fixable, where)})
 				}
 			}
 			if rs.active(first, now) != nil {
@@ -186,7 +182,7 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 			// Emergencies are sent when found; never repeated as new.
 			if urgent := pick(func(f *store.Finding) bool { return isEmergency(f, s) }); len(urgent) > 0 {
 				if s.DigestEmergencies {
-					emergencies.Findings = append(emergencies.Findings, digestFinding{Line: findingLine(urgent, where), URL: first.URL})
+					emergencies.Findings = append(emergencies.Findings, digestFinding{Line: findingLine(urgent, where), URL: first.URL, Item: findingItem(urgent, where)})
 				}
 				continue
 			}
@@ -195,7 +191,7 @@ func (a *alerter) buildDigest(ctx context.Context, s *store.AlertSettings, since
 					(!f.FirstSeenAt.Before(since) || !f.FixableSince.Before(since))
 			})
 			if len(news) > 0 {
-				fresh.Findings = append(fresh.Findings, digestFinding{Line: findingLine(news, where), URL: first.URL})
+				fresh.Findings = append(fresh.Findings, digestFinding{Line: findingLine(news, where), URL: first.URL, Item: findingItem(news, where)})
 			}
 		}
 		if len(emergencies.Findings) > 0 {
@@ -238,21 +234,71 @@ func emergencyRule(s *store.AlertSettings) string {
 }
 
 func (d *digest) message() (*notify.Message, error) {
-	var text, html bytes.Buffer
-	if err := digestText.Execute(&text, d); err != nil {
-		return nil, err
-	}
-	if err := digestHTML.Execute(&html, d); err != nil {
-		return nil, err
-	}
-	return &notify.Message{
+	period := formatDate(d.Since) + " to " + formatDate(d.Until) + "."
+	m := &notify.Message{
 		Event:   notify.EventDigest,
 		Title:   d.title(),
-		Text:    text.String(),
-		HTML:    html.String(),
+		Summary: period,
+		Footer:  "Vulnerabilities without a fix are not listed: they are on each server's page.",
 		URL:     d.DashboardURL,
 		Details: d,
-	}, nil
+	}
+	if d.AllClear() {
+		m.Summary = "All clear: nothing to report from " + period
+	}
+	if len(d.Emergencies) > 0 {
+		m.Sections = append(m.Sections, findingSection("Emergencies still open", "With a fix available, and "+d.EmergencyRule+".",
+			notify.ToneDanger, d.Emergencies))
+	}
+	if len(d.Stale) > 0 {
+		s := notify.Section{Title: "Stale servers", Note: "No report for too long: their vulnerabilities are unknown.",
+			Tone: notify.ToneWarning, Count: len(d.Stale)}
+		for _, st := range d.Stale {
+			note := "never reported"
+			if st.LastReportAt != nil {
+				note = "last report " + formatDate(st.LastReportAt)
+			}
+			s.Groups = append(s.Groups, notify.Group{Title: st.Hostname, URL: st.URL, Note: note})
+		}
+		m.Sections = append(m.Sections, s)
+	}
+	if len(d.Updates) > 0 {
+		s := notify.Section{Title: "Security updates", Tone: notify.ToneInfo}
+		for _, u := range d.Updates {
+			g := notify.Group{Title: u.Hostname, URL: u.URL, Items: u.Items}
+			if u.RebootRequired {
+				g.Note = "reboot required"
+			}
+			s.Groups = append(s.Groups, g)
+		}
+		m.Sections = append(m.Sections, s)
+	}
+	if len(d.New) > 0 {
+		m.Sections = append(m.Sections, findingSection("New vulnerabilities with a fix",
+			"Severity "+d.MinSeverity+" or worse, found or given a fix since the last digest.", notify.ToneWarning, d.New))
+	}
+	if len(d.Accepted) > 0 {
+		m.Sections = append(m.Sections, findingSection("Accepted risks expiring",
+			"Expired since the last digest, or expiring within a week. Once expired, they count again.", "", d.Accepted))
+	}
+	return m, nil
+}
+
+// findingSection lists vulnerabilities by server, the most urgent first.
+func findingSection(title, note, tone string, servers []digestServer) notify.Section {
+	s := notify.Section{Title: title, Note: note, Tone: tone}
+	for _, srv := range servers {
+		g := notify.Group{Title: srv.Hostname, URL: srv.URL}
+		for _, f := range srv.Findings {
+			it := f.Item
+			it.Note = f.Note
+			g.Items = append(g.Items, it)
+		}
+		notify.SortItems(g.Items)
+		s.Count += len(g.Items)
+		s.Groups = append(s.Groups, g)
+	}
+	return s
 }
 
 // lastDigestSlot is when the latest digest was due, if digests are on.

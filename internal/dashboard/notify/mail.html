@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{.Title}}</title>
+<style>
+body{margin:0;background:#fafafa;color:#0a0a0a;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}
+a{color:inherit}
+h1{margin:8px 0 4px;font-size:18px;font-weight:600;letter-spacing:-0.01em}
+h2{margin:24px 0 0;font-size:14px;font-weight:600}
+p{margin:0}
+.w{max-width:560px;margin:0 auto;padding:24px 16px}
+.c{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:24px}
+.m{color:#737373}
+.s{font-size:13px}
+.v{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.b{display:inline-block;padding:0 6px;border:1px solid #e5e5e5;border-radius:6px;font-size:12px;font-weight:500;line-height:20px;white-space:nowrap}
+.bd{background:#dc2626;border-color:#dc2626;color:#fff}
+.bo{border-color:#fecaca;color:#dc2626}
+.dot{display:inline-block;width:6px;height:6px;margin-right:4px;border-radius:3px;background:#a3a3a3;vertical-align:1px}
+.critical{background:#dc2626}.high{background:#ea580c}.medium{background:#ca8a04}.low{background:#2563eb}
+.btn{display:inline-block;margin-top:16px;padding:8px 14px;border-radius:6px;background:#171717;color:#fafafa!important;font-weight:500;text-decoration:none}
+.t{margin-top:8px;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden}
+.g{padding:8px 12px;background:#f5f5f5;font-weight:500}
+.r{padding:8px 12px;border-top:1px solid #e5e5e5}.r0{border-top:0}
+.f{padding:16px 0;font-size:12px;color:#a3a3a3;text-align:center}
+</style>
+</head>
+<body>
+<div class="w">
+<div class="c">
+<div class="s m">Best Before <span class="b{{if .Danger}} bd{{end}}">{{.Label}}</span></div>
+<h1>{{.Title}}</h1>
+{{- with .Summary}}
+<p class="m">{{.}}</p>
+{{- end}}
+{{- with .URL}}
+<a class="btn" href="{{.}}">Open in Best Before</a>
+{{- end}}
+{{- range .Sections}}
+{{- if .Title}}
+<h2>{{.Title}}{{if .Count}} <span class="m">{{.Count}}</span>{{end}}</h2>
+{{- end}}
+{{- with .Note}}
+<p class="s m">{{.}}</p>
+{{- end}}
+{{- range $g := .Groups}}
+<div class="t">
+{{- if .Title}}
+<div class="g">{{if .URL}}<a href="{{.URL}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with .Note}} <span class="s m">· {{.}}</span>{{end}}</div>
+{{- end}}
+{{- range $i, $it := .Items}}
+<div class="r{{if and (eq $i 0) (not $g.Title)}} r0{{end}}">
+{{- if not .Severity}}
+<strong>{{.Title}}</strong> <span class="v m">{{.Detail}}</span>
+{{- else}}
+<div>{{if .URL}}<a href="{{.URL}}"><strong>{{.Title}}</strong></a>{{else}}<strong>{{.Title}}</strong>{{end}}
+<span class="b"><span class="dot {{sevClass .Severity}}"></span>{{severity .Severity}}</span>
+{{- if .CVSS}} <span class="b">CVSS {{printf "%.1f" .CVSS}}</span>{{end}}
+{{- if .KnownExploited}} <span class="b bo">Known exploited</span>{{end}}</div>
+{{- if .Detail}}
+<div class="v m">{{.Detail}}</div>
+{{- end}}
+{{- with .Where}}
+<div class="s m">{{.}}</div>
+{{- end}}
+{{- with .Note}}
+<div class="s m">{{.}}</div>
+{{- end}}
+{{- end}}
+</div>
+{{- end}}
+</div>
+{{- end}}
+{{- end}}
+</div>
+<div class="f">{{with .Footer}}{{.}}<br>{{end}}Sent by Best Before</div>
+</div>
+</body>
+</html>
