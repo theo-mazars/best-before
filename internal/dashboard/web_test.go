@@ -202,7 +202,9 @@ func TestPagesNeedAdminSession(t *testing.T) {
 		t.Errorf("CSP: %q", csp)
 	}
 
-	tw.do(http.MethodPost, "/logout", url.Values{}, admin)
+	if rec := tw.json(http.MethodPost, "/api/ui/logout", nil, admin); rec.Code != http.StatusNoContent {
+		t.Errorf("logout: HTTP %d %s", rec.Code, rec.Body)
+	}
 	if rec := tw.do(http.MethodGet, "/api/ui/agents", nil, admin); rec.Code != http.StatusUnauthorized {
 		t.Errorf("session still valid after logout: HTTP %d", rec.Code)
 	}
@@ -284,9 +286,14 @@ func TestRevokeEnrolmentCode(t *testing.T) {
 
 func TestCrossSiteRequestsRefused(t *testing.T) {
 	tw := newTestWeb(t, "https://dashboard.test")
-	rec := tw.do(http.MethodPost, "/api/ui/agents/codes", nil, tw.session("admin@example.org"), "Sec-Fetch-Site", "cross-site", "Content-Type", "application/json")
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("cross-site POST: HTTP %d", rec.Code)
+	admin := tw.session("admin@example.org")
+	for _, path := range []string{"/api/ui/agents/codes", "/api/ui/logout"} {
+		if rec := tw.do(http.MethodPost, path, nil, admin, "Sec-Fetch-Site", "cross-site", "Content-Type", "application/json"); rec.Code != http.StatusForbidden {
+			t.Errorf("cross-site POST %s: HTTP %d", path, rec.Code)
+		}
+	}
+	if rec := tw.do(http.MethodGet, "/api/ui/agents", nil, admin); rec.Code != http.StatusOK {
+		t.Errorf("session ended by a cross-site logout: HTTP %d", rec.Code)
 	}
 }
 

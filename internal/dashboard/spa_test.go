@@ -44,6 +44,33 @@ func TestSPA(t *testing.T) {
 	}
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	tw := newTestWeb(t, "")
+	for _, path := range []string{"/", "/nope", "/static/style.css", "/api/ui/session", "/api/ui/nope"} {
+		h := tw.do(http.MethodGet, path, nil, nil).Header()
+		if h.Get("Content-Security-Policy") != tw.w.spa.csp || !strings.Contains(h.Get("Content-Security-Policy"), "default-src 'none'") ||
+			h.Get("X-Frame-Options") != "DENY" || h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Referrer-Policy") != "no-referrer" {
+			t.Errorf("%s: headers %v", path, h)
+		}
+	}
+}
+
+// The template pages are gone: their paths reach the app, and the old logout
+// form no longer exists.
+func TestOldRoutesGone(t *testing.T) {
+	tw := newTestWeb(t, "")
+	if rec := tw.do(http.MethodGet, "/static/style.css", nil, nil); rec.Body.String() != string(tw.w.spa.index) {
+		t.Errorf("/static/style.css: HTTP %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	admin := tw.session("admin@example.org")
+	if rec := tw.do(http.MethodPost, "/logout", nil, admin); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /logout: HTTP %d", rec.Code)
+	}
+	if rec := tw.do(http.MethodGet, "/api/ui/agents", nil, admin); rec.Code != http.StatusOK {
+		t.Errorf("session ended by POST /logout: HTTP %d", rec.Code)
+	}
+}
+
 func TestSessionShowsNoSecrets(t *testing.T) {
 	tw := newTestWeb(t, "")
 	rec := tw.do(http.MethodGet, "/api/ui/session", nil, tw.session("admin@example.org"))

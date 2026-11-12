@@ -5,7 +5,8 @@
 #
 # - the agent's .deb for amd64 and arm64, with an SBOM of each binary;
 # - the source archive, from which the dashboard image is built, with an
-#   SBOM of the dashboard that it builds;
+#   SBOM of the dashboard that it builds and one of the npm packages its web
+#   interface bundles;
 # - SHA256SUMS over all of them.
 #
 # Signing happens in the release workflow only. Builds are reproducible: the
@@ -50,7 +51,8 @@ gobuild() {
 		-o "$build/syft" $syft/cmd/syft
 )
 sbom() {
-	SYFT_CHECK_FOR_APP_UPDATE=false "$build/syft" scan "file:$1" --quiet \
+	SYFT_CHECK_FOR_APP_UPDATE=false SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES=false \
+		"$build/syft" scan "file:$1" --quiet \
 		--source-name "$2" --source-version "$version" -o "spdx-json=$3"
 }
 
@@ -113,6 +115,9 @@ src=best-before-$version
 git archive --format=tar.gz --prefix="$src/" -o "$out/$src.tar.gz" HEAD
 gobuild amd64 "$build/bestbefore" ./cmd/bestbefore
 sbom "$build/bestbefore" bestbefore "$out/$src.dashboard.spdx.json"
+# The web interface's packages, from its lockfile: those in "dependencies"
+# and what they need, but not "devDependencies".
+sbom ui/package-lock.json bestbefore-ui "$out/$src.ui.spdx.json"
 echo "built $src.tar.gz"
 
 (cd "$out" && shasum -a 256 -- * >"$build/SHA256SUMS")

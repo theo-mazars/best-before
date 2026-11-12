@@ -13,6 +13,7 @@ own machine.
 | `….deb.spdx.json` | SBOM of the agent in each package: what is compiled into it (the Go standard library, nothing else). |
 | `best-before-<version>.tar.gz` | The source. The dashboard is built from it, as a container image: see [Running the dashboard](dashboard.md#image). |
 | `best-before-<version>.dashboard.spdx.json` | SBOM of the dashboard built from that source: every Go module compiled into it. |
+| `best-before-<version>.ui.spdx.json` | SBOM of the dashboard's web interface: the npm packages it bundles and what they depend on, from `ui/package-lock.json`. Build tools they name as peers, such as Vite, are listed too. |
 | `SHA256SUMS` | Checksums of all the files above. |
 | `SHA256SUMS.sigstore.json` | Signature of `SHA256SUMS`, made by the release workflow with [Sigstore](https://www.sigstore.dev/). |
 
@@ -88,6 +89,7 @@ For maintainers.
    git switch main && git pull
    make check-pins
    make check
+   make audit                       # known vulnerabilities in Go and npm dependencies
    make dist VERSION=v0.1.0-rc.1    # optional: the release, built locally, unsigned
    ```
 
@@ -109,3 +111,15 @@ For maintainers.
 If something is wrong, delete the draft, fix it on `main` and release the
 next version (`v0.1.1`, or `v0.1.0-rc.2` for a pre-release). Tags never move
 and are never reused, so a version always means the same files.
+
+### Accepted vulnerabilities
+
+`make audit` fails on any known vulnerability in the dependencies, except
+those below. Each is accepted because no fixed version exists and the
+vulnerable code cannot be reached; remove it from here and from
+`scripts/audit.sh` once a fix is released, and add any new one to both.
+
+| ID | Package | Why it is accepted |
+|---|---|---|
+| [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) | `deepmerge` 4.3.1 (npm), through `@sveltejs/vite-plugin-svelte` | Prototype poisoning when merging attacker-controlled objects. The Svelte plugin only uses it while the web interface is built, to merge our own configuration; it is not in the interface the browser loads. Accepted on 2026-11-12. |
+| [GO-2026-6905](https://pkg.go.dev/vuln/GO-2026-6905) | `github.com/blakesmith/ar` (Go), through Syft | A crafted `ar` archive (such as a `.deb`) panics the reader. The dashboard imports it through Syft and Grype but never calls it; the Syft that releases are built with only reads our own binaries and `ui/package-lock.json`. Accepted on 2026-11-12. |

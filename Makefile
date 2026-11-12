@@ -2,12 +2,16 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -buildid= -X github.com/theo-mazars/best-before/internal/version.Version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: all check ui ui-check node-version build build-linux build-agent-linux image dist dry-run check-pins update-pins test vet fmt-check go-version clean
+.PHONY: all check audit ui ui-check node-version build build-linux build-agent-linux image dist dry-run check-pins update-pins test vet fmt-check go-version clean
 
 all: check build
 
 # Same checks as CI; run before every push.
 check: fmt-check go-version node-version vet test ui-check
+
+# Known vulnerabilities in the Go and npm dependencies (needs network access).
+audit:
+	./scripts/audit.sh
 
 fmt-check:
 	@unformatted=$$(gofmt -l .); \

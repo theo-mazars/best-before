@@ -45,11 +45,15 @@ Best Before watches the system, not your applications: the programs inside an im
 
 ## Development
 
-Building and testing need Go (see `go.mod` for the version) and, for the dashboard's web interface, Node (see `ui/.nvmrc`), on Linux or macOS. The agent needs only Go.
+Building and testing need Go (see `go.mod` for the version) and, for the dashboard's web interface, Node at the version in `ui/.nvmrc`, on Linux or macOS. The agent needs only Go.
+
+The web interface is a Svelte app in `ui/`. `make ui` installs its packages (`npm ci`) and builds it into `internal/dashboard/webui/dist`, which the dashboard binary embeds; `make build` does this first. A plain `go build` still works, but its dashboard only shows a page asking to run `make ui`. `make check` installs the packages and checks the interface (types, lint, unit tests) without building it, and checks that `ui/.nvmrc` matches the Node version in the Dockerfile.
 
 ```sh
+make ui      # web interface only
 make build   # web interface, then binaries in ./bin
 make check   # formatting, vet and tests, Go and web interface: run this before pushing
+make audit   # known vulnerabilities in the Go and npm dependencies (needs network access)
 make image   # the dashboard's container image
 make dist VERSION=v0.1.0-rc.1   # a release, unsigned: agent packages, source, SBOMs, checksums
 ```
@@ -92,7 +96,7 @@ Run `make check-pins` when you start working on a change, and commit any update 
 | `packaging/` | Dashboard image, agent package and systemd units, Docker socket proxy |
 | `docs/` | Guides for operators |
 | `scripts/` | Development and release scripts |
-| `tools/` | Pinned versions of the tools releases are built with (nfpm, Syft) |
+| `tools/` | Pinned versions of the tools releases are built and audited with (nfpm, Syft, govulncheck) |
 
 ## Security
 
