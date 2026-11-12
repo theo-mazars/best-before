@@ -1,14 +1,10 @@
 package dashboard
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"errors"
-	"html/template"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
@@ -17,9 +13,6 @@ import (
 	"github.com/theo-mazars/best-before/internal/dashboard/vulns"
 	"github.com/theo-mazars/best-before/internal/protocol"
 )
-
-//go:embed web
-var webFiles embed.FS
 
 const (
 	// The strict __Host- cookie needs HTTPS; over plain HTTP behind a proxy,
@@ -42,7 +35,6 @@ type web struct {
 	now        func() time.Time
 	loginIP    *rateLimiter
 	loginEmail *rateLimiter
-	pages      map[string]*template.Template
 	spa        *spa
 	pending    pendingLogins
 	setup      setup
@@ -61,30 +53,19 @@ func newWeb(st *store.Store, db interface{ Status() vulns.Status }, key *protoco
 		now:        now,
 		loginIP:    newRateLimiter(10, 30*time.Second, now),
 		loginEmail: newRateLimiter(5, 5*time.Minute, now),
-		pages:      map[string]*template.Template{},
 		sealer:     newSealer(key),
 	}
 	var err error
 	if w.spa, err = newSPA(); err != nil {
 		return nil, err
 	}
-	funcs := template.FuncMap{"date": formatDate}
-	for _, page := range []string{"error"} {
-		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFiles, "web/templates/layout.html", "web/templates/"+page+".html")
-		if err != nil {
-			return nil, err
-		}
-		w.pages[page] = t
-	}
 	return w, nil
 }
 
 func (w *web) routes(mux *http.ServeMux) {
-	static, _ := fs.Sub(webFiles, "web/static")
 	csrf := http.NewCrossOriginProtection()
 	page := func(h http.Handler) http.Handler { return w.headers(csrf.Handler(h)) }
 
-	mux.Handle("GET /static/", w.headers(http.StripPrefix("/static/", http.FileServerFS(static))))
 	mux.Handle("GET /", w.headers(w.spa))
 	mux.Handle("GET /api/ui/session", page(http.HandlerFunc(w.session)))
 	mux.Handle("POST /api/ui/login", page(http.HandlerFunc(w.login)))
@@ -111,7 +92,6 @@ func (w *web) routes(mux *http.ServeMux) {
 	for _, m := range []string{"GET", "POST", "PUT", "DELETE"} {
 		mux.Handle(m+" /api/ui/", page(http.HandlerFunc(w.apiNotFound)))
 	}
-	mux.Handle("POST /logout", page(http.HandlerFunc(w.logout)))
 }
 
 func (w *web) headers(h http.Handler) http.Handler {
@@ -127,14 +107,6 @@ func (w *web) headers(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(rw, r)
 	})
-}
-
-func (w *web) logout(rw http.ResponseWriter, r *http.Request) {
-	if err := w.endSession(rw, r); err != nil {
-		w.fail(rw, r, err)
-		return
-	}
-	http.Redirect(rw, r, "/login", http.StatusSeeOther)
 }
 
 func (w *web) cookieName(r *http.Request) string {
@@ -275,25 +247,6 @@ func (w *web) revoke(rw http.ResponseWriter, r *http.Request, u *store.User) {
 	}
 	w.log.Info("agent revoked", "agent", id, "by", u.Email)
 	rw.WriteHeader(http.StatusNoContent)
-}
-
-// render builds the whole page before sending it, so that a template error
-// never sends half a page.
-func (w *web) render(rw http.ResponseWriter, status int, page string, data any) {
-	var buf bytes.Buffer
-	if err := w.pages[page].Execute(&buf, data); err != nil {
-		w.log.Error("rendering page", "page", page, "error", err)
-		http.Error(rw, "Something went wrong on the dashboard. The details are in its log.", http.StatusInternalServerError)
-		return
-	}
-	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
-	rw.WriteHeader(status)
-	rw.Write(buf.Bytes())
-}
-
-func (w *web) fail(rw http.ResponseWriter, r *http.Request, err error) {
-	w.log.Error("request failed", "path", r.URL.Path, "error", err)
-	w.render(rw, http.StatusInternalServerError, "error", map[string]any{"Message": failMessage})
 }
 
 func (w *web) cleanSessions(ctx context.Context) {
